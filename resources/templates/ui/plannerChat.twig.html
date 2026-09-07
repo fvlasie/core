@@ -42,12 +42,12 @@ For info about editing, see: https://twig.symfony.com/doc/2.x/
                 </div>
 
                 {% if item.replyURL or item.deleteURL %}
-                <div class="flex-none flex items-center justify-end gap-3 ml-auto">
+                <div class="flex-none flex items-center justify-end gap-2 ml-auto">
                     {% if item.replyURL %}
-                        <a class="text-sm font-medium" href="{{ item.replyURL }}">{{ __('Reply') }}</a>
+                        <a class="tag message no-underline" href="{{ item.replyURL }}">{{ __('Reply') }}</a>
                     {% endif %}
                     {% if item.deleteURL %}
-                        <a class="text-sm font-medium" href="{{ item.deleteURL }}">{{ __('Delete') }}</a>
+                        <a class="tag message no-underline" href="{{ item.deleteURL }}">{{ __('Delete') }}</a>
                     {% endif %}
                 </div>
                 {% endif %}
