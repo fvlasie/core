@@ -42,6 +42,16 @@ class FileUpload extends Input
     protected $maxUpload = true;
 
     /**
+     * File inputs should not use Alpine text validation (value.trim / checkValidity + accept).
+     * That combination blocks homework uploads in Safari and iOS.
+     * @return bool
+     */
+    public function isValidatable()
+    {
+        return false;
+    }
+
+    /**
      * Set an array or CSV string of file extensions accepted by this file input.
      * @param   array|string  $accepts
      * @return  self

@@ -663,7 +663,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                                                 $row->addTextField('type')->readonly()->required()->setValue('File');
                                             } else {
                                                 $types = ['Link' => __('Link'), 'File' => __('File')];
-                                                $row->addRadio('type')->fromArray($types)->inline()->required()->checked('Link');
+                                                $row->addRadio('type')->fromArray($types)->inline()->required()->checked('File');
 
                                                 $form->toggleVisibilityByClass('submitFile')->onRadio('type')->when('File');
                                                 $form->toggleVisibilityByClass('submitLink')->onRadio('type')->when('Link');
