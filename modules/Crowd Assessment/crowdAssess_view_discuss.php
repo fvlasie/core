@@ -109,6 +109,9 @@ if (isActionAccessible($guid, $connection2, '/modules/Crowd Assessment/crowdAsse
                 $url = $student['type'] == 'File'  ? './'.$student['location'] : $student['location'];
                 $title = $student['version'].' '.sprintf(__('Submitted at %1$s on %2$s'), substr($student['timestamp'], 11, 5), Format::date($student['timestamp']));
                 return Format::link($url, $linkText, ['title' => $title]);
+            } elseif ($student['type'] == 'Text') {
+                $title = $student['version'].' '.sprintf(__('Submitted at %1$s on %2$s'), substr($student['timestamp'], 11, 5), Format::date($student['timestamp']));
+                return Format::tooltip(Format::truncate(strip_tags($student['content'] ?? ''), 40), $title);
             } else {
                 $title = sprintf(__('Recorded at %1$s on %2$s'), substr($student['timestamp'], 11, 5), Format::date($student['timestamp']));
                 return Format::tooltip($linkText, $title);

@@ -24,7 +24,7 @@ use Gibbon\Contracts\Filesystem\FileHandler;
 
 require_once __DIR__ . '/../../gibbon.php';
 
-$_POST = $container->get(Validator::class)->sanitize($_POST, ['link' => 'URL']);
+$_POST = $container->get(Validator::class)->sanitize($_POST, ['link' => 'URL', 'content' => 'HTML']);
 
 //Module includes
 include './moduleFunctions.php';
@@ -81,9 +81,10 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full_
                     $gibbonPlannerEntryID = $_POST['gibbonPlannerEntryID'] ?? '';
                     $count = $_POST['count'] ?? '';
                     $lesson = $_POST['lesson'] ?? '';
+                    $content = $_POST['content'] ?? '';
 
 
-                    if (($submission == true and $gibbonPlannerEntryHomeworkID == '') or ($submission == false and ($gibbonPersonID == '' or $type == '' or $version == '' or ($type == 'File' and $_FILES['file']['name'] == '') or ($type == 'Link' and $link == '') or $status == '' or $lesson == '' or $count == ''))) {
+                    if (($submission == true and $gibbonPlannerEntryHomeworkID == '') or ($submission == false and ($gibbonPersonID == '' or $type == '' or $version == '' or ($type == 'File' and empty($_FILES['file']['name'])) or ($type == 'Link' and $link == '') or ($type == 'Text' and trim(strip_tags($content)) === '') or $status == '' or $lesson == '' or $count == ''))) {
                         $URL .= '&return=error1';
                         header("Location: {$URL}");
                     } else {
@@ -104,6 +105,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full_
                             $partialFail = false;
                             $fileMetaData = null;
                             $attachment = null;
+                            $contentValue = null;
                             if ($type == 'Link') {
                                 if (substr($link, 0, 7) != 'http://' and substr($link, 0, 8) != 'https://') {
                                     $partialFail = true;
@@ -125,6 +127,10 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full_
                                     $fileMetaData = $fileUploader->getFileMetaData($attachment);
                                 }
                             }
+                            if ($type == 'Text') {
+                                $contentValue = $content;
+                                $attachment = '';
+                            }
 
                             //Deal with partial fail
                             if ($partialFail == true) {
@@ -133,8 +139,8 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full_
                             } else {
                                 //Write to database
                                 try {
-                                    $data = array('gibbonPlannerEntryID' => $gibbonPlannerEntryID, 'gibbonPersonID' => $gibbonPersonID, 'type' => $type, 'version' => $version, 'status' => $status, 'location' => $attachment, 'count' => ($count + 1), 'timestamp' => date('Y-m-d H:i:s'));
-                                    $sql = 'INSERT INTO gibbonPlannerEntryHomework SET gibbonPlannerEntryID=:gibbonPlannerEntryID, gibbonPersonID=:gibbonPersonID, type=:type, version=:version, status=:status, location=:location, count=:count, timestamp=:timestamp';
+                                    $data = array('gibbonPlannerEntryID' => $gibbonPlannerEntryID, 'gibbonPersonID' => $gibbonPersonID, 'type' => $type, 'version' => $version, 'status' => $status, 'location' => $attachment, 'content' => $contentValue, 'count' => ($count + 1), 'timestamp' => date('Y-m-d H:i:s'));
+                                    $sql = 'INSERT INTO gibbonPlannerEntryHomework SET gibbonPlannerEntryID=:gibbonPlannerEntryID, gibbonPersonID=:gibbonPersonID, type=:type, version=:version, status=:status, location=:location, content=:content, count=:count, timestamp=:timestamp';
                                     $result = $connection2->prepare($sql);
                                     $result->execute($data);
                                 } catch (PDOException $e) {

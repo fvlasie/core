@@ -750,4 +750,28 @@ function getResourceLink($guid, $gibbonResourceID, $type, $name, $content)
     return $output;
 }
 
+function formatPlannerHomeworkSubmissionOutput($session, array $row)
+{
+    if (($row['type'] ?? '') === 'Text') {
+        $html = $row['content'] ?? '';
+        if (trim(strip_tags($html)) === '') {
+            return __('No content');
+        }
+
+        return '<details><summary>'.__('View text').'</summary><div class="overflow-auto max-h-64 mt-2">'.$html.'</div></details>';
+    }
+
+    $location = $row['location'] ?? '';
+    $max = ($row['type'] ?? '') == 'File' ? 15 : 40;
+    $print = strlen($location) > $max ? substr($location, 0, $max).'...' : $location;
+
+    if (($row['type'] ?? '') == 'File') {
+        $locationSafe = str_replace(['?', '#'], ['%3F', '%23'], $location);
+
+        return "<a href='".$session->get('absoluteURL').'/'.$locationSafe."' target='_blank'>".$print.'</a>';
+    }
+
+    return "<a href='".$location."' target='_blank'>".$print.'</a>';
+}
+
 ?>

@@ -310,7 +310,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_add.php') 
 
             $row = $form->addRow()->setClass('homeworkSubmission');
                 $row->addLabel('homeworkSubmissionType', __('Submission Type'));
-                $row->addSelect('homeworkSubmissionType')->fromArray(array('Link' => __('Link'), 'File' => __('File'), 'Link/File' => __('Link/File')))->required();
+                $row->addSelect('homeworkSubmissionType')->fromArray(array('Link' => __('Link'), 'File' => __('File'), 'Link/File' => __('Link/File'), 'Text' => __('Text')))->required();
 
             $row = $form->addRow()->setClass('homeworkSubmission');
                 $row->addLabel('homeworkSubmissionRequired', __('Submission Required'));

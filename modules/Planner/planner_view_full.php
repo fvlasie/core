@@ -553,6 +553,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                                         $resultVersion->execute($dataVersion);
 
                                         $latestVersion = '';
+                                        $latestHomework = [];
                                         $count = 0;
                                         $rowNum = 'odd';
                                         if ($resultVersion->rowCount() > 0) {
@@ -607,19 +608,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
 															<?php echo substr($rowVersion['timestamp'], 11, 5).' '.Format::date(substr($rowVersion['timestamp'], 0, 10)) ?><br/>
 														</td>
 														<td style='max-width: 180px; word-wrap: break-word;'>
-															<?php
-															if ($rowVersion['type'] == 'File') {
-                                                                $rowVersion['location'] = str_replace(['?','#'], ['%3F', '%23'], $rowVersion['location'] ?? '');
-																echo "<a href='".$session->get('absoluteURL').'/'.$rowVersion['location']."' target='_blank'>".$rowVersion['location'].'</a>';
-															} else {
-                                                                if (strlen($rowVersion['location'])<=40) {
-                                                                    echo "<a href='".$rowVersion['location']."' target='_blank'>".$rowVersion['location'].'</a>';
-                                                                }
-                                                                else {
-                                                                    echo "<a href='".$rowVersion['location']."' target='_blank'>".substr($rowVersion['location'], 0, 50).'...'.'</a>';
-                                                                }
-															}
-														?>
+															<?php echo formatPlannerHomeworkSubmissionOutput($session, $rowVersion); ?>
 														</td>
 														<?php
 														if (date('Y-m-d H:i:s') < $values['homeworkDueDateTime']) {
@@ -631,6 +620,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
 													</tr>
 													<?php
 													$latestVersion = $rowVersion['version'];
+                                                    $latestHomework = $rowVersion;
 												}
 											?>
 											</table>
@@ -661,6 +651,8 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                                                 $row->addTextField('type')->readonly()->required()->setValue('Link');
                                             } elseif ($values['homeworkSubmissionType'] == 'File') {
                                                 $row->addTextField('type')->readonly()->required()->setValue('File');
+                                            } elseif ($values['homeworkSubmissionType'] == 'Text') {
+                                                $row->addTextField('type')->readonly()->required()->setValue('Text');
                                             } else {
                                                 $types = ['Link' => __('Link'), 'File' => __('File')];
                                                 $row->addRadio('type')->fromArray($types)->inline()->required()->checked('Link');
@@ -679,8 +671,18 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                                                 $row->addLabel('version', __('Version'));
                                                 $row->addSelect('version')->fromArray($versions)->required();
 
+                                            if ($values['homeworkSubmissionType'] == 'Text') {
+                                                if (($latestHomework['version'] ?? '') == 'Draft' && !empty($latestHomework['gibbonPlannerEntryHomeworkID'])) {
+                                                    $form->addHiddenValue('gibbonPlannerEntryHomeworkID', $latestHomework['gibbonPlannerEntryHomeworkID']);
+                                                }
+                                                $row = $form->addRow();
+                                                    $column = $row->addColumn();
+                                                    $column->addLabel('content', __('Submit Text'));
+                                                    $column->addEditor('content', $guid)->setRows(12)->showMedia()->required()->setValue($latestHomework['content'] ?? '');
+                                            }
+
                                             // File
-                                            if ($values['homeworkSubmissionType'] != 'Link') {
+                                            if ($values['homeworkSubmissionType'] != 'Link' && $values['homeworkSubmissionType'] != 'Text') {
                                                 $fileUploader = $container->get(FileUploader::class);
                                                 $row = $form->addRow()->addClass('submitFile');
                                                     $row->addLabel('file', __('Submit File'));
@@ -688,7 +690,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                                             }
 
                                             // Link
-                                            if ($values['homeworkSubmissionType'] != 'File') {
+                                            if ($values['homeworkSubmissionType'] != 'File' && $values['homeworkSubmissionType'] != 'Text') {
                                                 $row = $form->addRow()->addClass('submitLink');
                                                     $row->addLabel('link', __('Submit Link'));
                                                     $row->addURL('link')->maxLength(255)->required();
@@ -763,19 +765,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
 															<?php echo substr($rowVersion['timestamp'], 11, 5).' '.Format::date(substr($rowVersion['timestamp'], 0, 10)) ?><br/>
 														</td>
 														<td style='max-width: 180px; word-wrap: break-word;'>
-															<?php
-															if ($rowVersion['type'] == 'File') {
-                                                                $rowVersion['location'] = str_replace(['?','#'], ['%3F', '%23'], $rowVersion['location'] ?? '');
-																echo "<a href='".$session->get('absoluteURL').'/'.$rowVersion['location']."' target='_blank'>".$rowVersion['location'].'</a>';
-															} else {
-                                                                if (strlen($rowVersion['location'])<=40) {
-                                                                    echo "<a href='".$rowVersion['location']."' target='_blank'>".$rowVersion['location'].'</a>';
-                                                                }
-                                                                else {
-                                                                    echo "<a href='".$rowVersion['location']."' target='_blank'>".substr($rowVersion['location'], 0, 40).'...'.'</a>';
-                                                                }
-															}
-                                                            ?>
+															<?php echo formatPlannerHomeworkSubmissionOutput($session, $rowVersion); ?>
 														</td>
 													</tr>
 													<?php
@@ -905,19 +895,9 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
 																<?php echo substr($rowVersion['timestamp'], 11, 5).' '.Format::date(substr($rowVersion['timestamp'], 0, 10)) ?><br/>
 															</td>
 															<td>
-																<?php
-																$locationPrint = $rowVersion['location'];
-														if (strlen($locationPrint) > 15) {
-															$locationPrint = substr($locationPrint, 0, 15).'...';
-														}
-														if ($rowVersion['type'] == 'File') {
-                                                            $rowVersion['location'] = str_replace(['?','#'], ['%3F', '%23'], $rowVersion['location'] ?? '');
-															echo "<a href='".$session->get('absoluteURL').'/'.$rowVersion['location']."' target='_blank'>".$locationPrint.'</a>';
-														} else {
-															echo "<a target='_blank' href='".$rowVersion['location']."'>".$locationPrint.'</a>';
-														}
-
-                                                        echo '</td>';
+																<?php echo formatPlannerHomeworkSubmissionOutput($session, $rowVersion); ?>
+															</td>
+                                                            <?php
 
                                                                 if ($teacher) {
                                                                     echo '<td>';
