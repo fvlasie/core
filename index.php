@@ -322,6 +322,7 @@ $javascriptConfig = [
             'file'              => __('File'),
             'open'              => __('Open'),
             'error'             => __('Error'),
+            'file_not_uploaded' => __('This file link was not uploaded. Remove it and insert the file again before saving.'),
         ],
         'htmx' => [
             'unload_confirm' => __("Are you sure you want to leave this page? Information you've entered may not be saved."),

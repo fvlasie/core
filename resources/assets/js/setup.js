@@ -68,7 +68,89 @@ document.addEventListener('htmx:beforeHistorySave', (event) => {
  * as needed in the Editor.template.php file. Hook into settings using 
  * Gibbon.config.tinymce from index.php.
  */
-const gibbonTinyMCEFileUpload = {
+const gibbonEditorUploadUrl = "./modules/User/form_editor_uploadAjaxProcess.php";
+
+const gibbonIsTemporaryFileUrl = (value) => {
+    return typeof value === "string" && (value.indexOf("blob:") === 0 || value.indexOf("data:") === 0);
+};
+
+const gibbonEscapeHtml = (value) => {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+};
+
+const gibbonEditorHasTemporaryFileLink = (editor) => {
+    const body = editor.getBody();
+    return !!body && !!body.querySelector('a[href^="blob:"], a[href^="data:"]');
+};
+
+const gibbonWarnTemporaryFileLink = (editor) => {
+    editor.notificationManager.open({
+        text: Gibbon.config.tinymce.file_not_uploaded,
+        type: "error",
+    });
+};
+
+/**
+ * Upload a file for the editor and resolve with the stored URL.
+ * Temporary blob: and data: URLs are never returned.
+ */
+const gibbonUploadEditorFile = (file, filename, onProgress) => {
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.withCredentials = true;
+        xhr.open("POST", gibbonEditorUploadUrl);
+
+        if (onProgress) {
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    onProgress(event.loaded, event.total);
+                }
+            };
+        }
+
+        xhr.onload = () => {
+            if (xhr.status < 200 || xhr.status >= 300) {
+                reject(Gibbon.config.tinymce.error + " " + xhr.status + ": " + xhr.statusText);
+                return;
+            }
+
+            let json;
+            try {
+                json = JSON.parse(xhr.responseText);
+            } catch (e) {
+                reject(Gibbon.config.tinymce.error + " " + xhr.responseText);
+                return;
+            }
+
+            if (!json || typeof json.location != "string" || gibbonIsTemporaryFileUrl(json.location)) {
+                reject(Gibbon.config.tinymce.error + " " + xhr.responseText);
+                return;
+            }
+
+            resolve(json.location);
+        };
+
+        xhr.onerror = () => {
+            reject(Gibbon.config.tinymce.error + " " + xhr.status + ": " + xhr.statusText);
+        };
+
+        const formData = new FormData();
+        formData.append("file", file, filename);
+        xhr.send(formData);
+    });
+};
+
+const gibbonInsertUploadedFile = (editor, location, title) => {
+    const safeLocation = gibbonEscapeHtml(location);
+    const safeTitle = gibbonEscapeHtml(title || location);
+    editor.execCommand("mceInsertContent", false, `<p><a href="${safeLocation}" data-fileupload="${safeTitle}">${safeTitle}</a></p>`);
+};
+
+const gibbonTinyMCEFileUpload = (editor) => ({
     title: Gibbon.config.tinymce.insert_file,
     body: {
         type: "panel",
@@ -101,87 +183,67 @@ const gibbonTinyMCEFileUpload = {
     ],
     onSubmit: (api) => {
         const data = api.getData();
+        const value = data.file_upload ? data.file_upload.value : "";
+        const meta = (data.file_upload && data.file_upload.meta) ? data.file_upload.meta : {};
+        const title = meta.title || meta.text || "";
 
-        if (data.file_upload.value == '') {
-            tinymce.activeEditor.notificationManager.open({ text: Gibbon.config.tinymce.invalid_file, type: 'warning' });
+        const failure = (message) => {
+            editor.setProgressState(false);
+            editor.notificationManager.close();
+            editor.notificationManager.open({ text: message, type: "error" });
+            api.close();
+        };
+
+        const success = (location, linkTitle) => {
+            if (gibbonIsTemporaryFileUrl(location)) {
+                failure(Gibbon.config.tinymce.file_not_uploaded);
+                return;
+            }
+
+            editor.setProgressState(false);
+            editor.notificationManager.close();
+            gibbonInsertUploadedFile(editor, location, linkTitle || title);
+            api.close();
+        };
+
+        if (value == "") {
+            editor.notificationManager.open({ text: Gibbon.config.tinymce.invalid_file, type: "warning" });
             api.close();
             return;
         }
 
-        const notification = tinymce.activeEditor.notificationManager.open({ text: Gibbon.config.tinymce.uploading, progressBar: true });
-        tinymce.activeEditor.setProgressState(true);
-
-        const success = function (location, title) {
-            tinymce.activeEditor.setProgressState(false);
-            tinymce.activeEditor.notificationManager.close();
-            tinymce.activeEditor.execCommand("mceInsertContent", false, `<p><a href="${location}" data-fileupload="${title ?? location}">${title ?? location}</a></p>`);
-
-            api.close();
-        };
-
-        const failure = function (message) {
-            tinymce.activeEditor.setProgressState(false);
-            tinymce.activeEditor.notificationManager.close();
-            tinymce.activeEditor.notificationManager.open({ text: message, type: 'error' });
-            api.close();
-        };
-
-        var xhr, formData;
-        xhr = new XMLHttpRequest();
-        xhr.withCredentials = true;
-
-        // If a value is provided, check that it exists
-        if (!data.file_upload.meta.title) {
-            success(data.file_upload.value);
+        // A normal URL was pasted, or the file picker already uploaded it.
+        if (!gibbonIsTemporaryFileUrl(value)) {
+            success(value, title);
             return;
         }
-        
-        xhr.open("POST", "./modules/User/form_editor_uploadAjaxProcess.php");
 
-        xhr.upload.onprogress = function (e) {
-            notification.progressBar.value((e.loaded / e.total) * 100);
-        };
-
-        xhr.onload = function () {
-            var json;
-
-            if (xhr.status === 403) {
-                failure(Gibbon.config.tinymce.error + " " + xhr.status + ": " + xhr.statusText);
-                return;
-            }
-
-            if (xhr.status < 200 || xhr.status >= 300) {
-                failure(Gibbon.config.tinymce.error + " " + xhr.status + ": " + xhr.statusText);
-                return;
-            }
-
-            json = JSON.parse(xhr.responseText);
-
-            if (!json || typeof json.location != "string") {
-                failure(Gibbon.config.tinymce.error + " " + xhr.responseText);
-                return;
-            }
-
-            success(json.location, data.file_upload.meta.title);
-        };
-
-        xhr.onerror = function () {
-            failure(Gibbon.config.tinymce.error + " " + xhr.status + ": " + xhr.statusText);
-        };
-
+        let blobInfo = null;
         try {
-            const blobCache =  tinymce.activeEditor.editorUpload.blobCache;
-            const blobInfo = blobCache.get(data.file_upload.meta.id);
-
-            formData = new FormData();
-            formData.append("file", blobInfo.blob(), data.file_upload.meta.title );
-
-            xhr.send(formData);
+            const blobCache = editor.editorUpload.blobCache;
+            blobInfo = (meta.id && blobCache.get(meta.id)) || blobCache.getByUri(value);
         } catch (e) {
-            failure(Gibbon.config.tinymce.invalid_file);
+            blobInfo = null;
         }
+
+        if (!blobInfo) {
+            failure(Gibbon.config.tinymce.file_not_uploaded);
+            return;
+        }
+
+        const notification = editor.notificationManager.open({ text: Gibbon.config.tinymce.uploading, progressBar: true });
+        editor.setProgressState(true);
+        const filename = title || blobInfo.filename() || "file";
+
+        gibbonUploadEditorFile(blobInfo.blob(), filename, (loaded, total) => {
+            notification.progressBar.value((loaded / total) * 100);
+        }).then((location) => {
+            success(location, filename);
+        }).catch((message) => {
+            failure(message);
+        });
     },
-};
+});
 
 const gibbonTinyMCEDefaults = {
     language: Gibbon.config.tinymce.locale,
@@ -285,7 +347,8 @@ const gibbonTinyMCEFull = {
     file_picker_types: 'file image',
 
     /* and here's our custom image picker*/
-    file_picker_callback: (cb, value, meta) => {
+    file_picker_callback: function (cb, value, meta) {
+        const editor = this && this.editorUpload ? this : tinymce.activeEditor;
         const input = document.createElement('input');
         input.setAttribute('type', 'file');
 
@@ -293,21 +356,37 @@ const gibbonTinyMCEFull = {
             input.setAttribute('accept', 'image/*');
         }
 
-        input.addEventListener('change', (e) => {
-            const file = e.target.files[0];
+        input.addEventListener('change', () => {
+            const file = input.files && input.files[0];
+            if (!file) return;
 
-            const reader = new FileReader();
-            reader.addEventListener('load', () => {
-                const id = 'blobid' + (new Date()).getTime();
-                const blobCache =  tinymce.activeEditor.editorUpload.blobCache;
-                const base64 = reader.result.split(',')[1];
-                const blobInfo = blobCache.create(id, file, base64);
-                blobCache.add(blobInfo);
+            // Images stay on TinyMCE's upload pipeline, which replaces blob
+            // sources when the editor content is saved.
+            if (meta.filetype == 'image') {
+                const reader = new FileReader();
+                reader.addEventListener('load', () => {
+                    const id = 'blobid' + (new Date()).getTime();
+                    const blobCache = editor.editorUpload.blobCache;
+                    const base64 = reader.result.split(',')[1];
+                    const blobInfo = blobCache.create(id, file, base64);
+                    blobCache.add(blobInfo);
 
-                /* call the callback and populate the Title field with the file name */
-                cb(blobInfo.blobUri(), { title: file.name, id: id });
+                    cb(blobInfo.blobUri(), { title: file.name, text: file.name, id: id });
+                });
+                reader.readAsDataURL(file);
+                return;
+            }
+
+            // The link dialog writes this URL straight into href. Upload first
+            // so a blob: address is never stored as the file link.
+            const notification = editor.notificationManager.open({ text: Gibbon.config.tinymce.uploading, progressBar: true });
+            gibbonUploadEditorFile(file, file.name).then((location) => {
+                notification.close();
+                cb(location, { text: file.name, title: file.name });
+            }).catch((message) => {
+                notification.close();
+                editor.notificationManager.open({ text: message, type: 'error' });
             });
-            reader.readAsDataURL(file);
         });
 
         input.click();
@@ -353,7 +432,7 @@ const gibbonTinyMCEFull = {
         editor.ui.registry.addButton('fileupload', {
             icon: 'new-document',
             tooltip: Gibbon.config.tinymce.insert_file,
-            onAction: () => editor.windowManager.open(gibbonTinyMCEFileUpload)
+            onAction: () => editor.windowManager.open(gibbonTinyMCEFileUpload(editor))
         });
 
         editor.ui.registry.addButton('imagedownload', {
@@ -444,8 +523,30 @@ const gibbonTinyMCEFull = {
       },
 
     init_instance_callback: (editor) => {
+        let lastTemporaryLinkWarning = 0;
+        const blockTemporaryFileLink = (event) => {
+            if (!gibbonEditorHasTemporaryFileLink(editor)) return false;
+
+            if (event) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }
+
+            const now = Date.now();
+            if (now - lastTemporaryLinkWarning > 3000) {
+                lastTemporaryLinkWarning = now;
+                gibbonWarnTemporaryFileLink(editor);
+            }
+            return true;
+        };
+
+        if (editor.formElement) {
+            editor.formElement.addEventListener("submit", blockTemporaryFileLink, true);
+        }
+
         // Enable quick save from within tinymce
         editor.addShortcut("meta+s", "Custom Ctrl+S", function (e) {
+            if (blockTemporaryFileLink(e)) return;
             tinymce.triggerSave();
             editor.formElement.dispatchEvent(new CustomEvent('quicksave'));
         });
@@ -465,6 +566,7 @@ const gibbonTinyMCEFull = {
         if (editor.targetElm.hasAttribute('data-autosave')) {
             setTimeout(function () {
                 editor.on('keydown', function () {
+                    if (blockTemporaryFileLink()) return;
                     tinymce.triggerSave();
                     gibbonFormSubmitQuiet(document.getElementById(editor.formElement.id), editor.targetElm.getAttribute('data-autosave'))
                     editor.targetElm.dispatchEvent(new Event('input', { bubbles: true }));
