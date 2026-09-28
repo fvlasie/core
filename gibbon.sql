@@ -4568,7 +4568,7 @@ CREATE TABLE `gibbonPlannerEntry` (
   `homeworkSubmission` enum('N','Y') NOT NULL,
   `homeworkSubmissionDateOpen` date DEFAULT NULL,
   `homeworkSubmissionDrafts` varchar(1) DEFAULT NULL,
-  `homeworkSubmissionType` enum('','Link','File','Link/File') NOT NULL,
+  `homeworkSubmissionType` varchar(30) NOT NULL DEFAULT '',
   `homeworkSubmissionRequired` enum('Optional','Required') DEFAULT NULL,
   `homeworkCrowdAssess` enum('N','Y') NOT NULL,
   `homeworkCrowdAssessOtherTeachersRead` enum('N','Y') NOT NULL,
@@ -4593,6 +4593,8 @@ CREATE TABLE `gibbonPlannerEntry` (
 CREATE TABLE `gibbonPlannerEntryDiscuss` (
   `gibbonPlannerEntryDiscussID` int(16) UNSIGNED ZEROFILL NOT NULL,
   `gibbonPlannerEntryID` int(14) UNSIGNED ZEROFILL NOT NULL,
+  `context` enum('Lesson','Homework') NOT NULL DEFAULT 'Lesson',
+  `gibbonPersonIDStudent` int(10) UNSIGNED ZEROFILL DEFAULT NULL,
   `gibbonPersonID` int(10) UNSIGNED ZEROFILL NOT NULL,
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `comment` text NOT NULL,
@@ -4622,10 +4624,11 @@ CREATE TABLE `gibbonPlannerEntryHomework` (
   `gibbonPlannerEntryHomeworkID` int(16) UNSIGNED ZEROFILL NOT NULL,
   `gibbonPlannerEntryID` int(14) UNSIGNED ZEROFILL NOT NULL,
   `gibbonPersonID` int(10) UNSIGNED ZEROFILL NOT NULL,
-  `type` enum('Link','File') NOT NULL,
+  `type` enum('Link','File','Text') NOT NULL,
   `version` enum('Draft','Final') NOT NULL,
   `status` enum('On Time','Late','Exemption') NOT NULL,
   `location` varchar(255) DEFAULT NULL,
+  `content` text DEFAULT NULL,
   `count` int NOT NULL,
   `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
@@ -7587,7 +7590,8 @@ ALTER TABLE `gibbonPlannerEntry`
 -- Indexes for table `gibbonPlannerEntryDiscuss`
 --
 ALTER TABLE `gibbonPlannerEntryDiscuss`
-  ADD PRIMARY KEY (`gibbonPlannerEntryDiscussID`);
+  ADD PRIMARY KEY (`gibbonPlannerEntryDiscussID`),
+  ADD KEY `homeworkChat` (`gibbonPlannerEntryID`, `context`, `gibbonPersonIDStudent`);
 
 --
 -- Indexes for table `gibbonPlannerEntryGuest`

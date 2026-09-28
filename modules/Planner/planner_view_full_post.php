@@ -70,6 +70,8 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full_
             $replyTo = $_GET['replyTo'] ?? '';
         }
         $search = $_GET['search'] ?? '';
+        $context = ($_GET['context'] ?? '') === 'Homework' ? 'Homework' : 'Lesson';
+        $gibbonPersonIDStudent = $_GET['gibbonPersonIDStudent'] ?? '';
 
         //Get class variable
         $gibbonPlannerEntryID = $_GET['gibbonPlannerEntryID'] ?? '';
@@ -147,8 +149,13 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full_
                     echo __('The selected record does not exist, or you do not have access to it.');
                     echo '</div>';
                 } else {
+                    if ($context === 'Homework' && !plannerCanAccessHomeworkChat($connection2, $session, $row, $gibbonPersonIDStudent, $highestAction, true)) {
+                        echo "<div class='warning'>";
+                        echo __('The selected record does not exist, or you do not have access to it.');
+                        echo '</div>';
+                    } else {
                     echo '<h2>';
-                    echo __('Planner Discussion Post');
+                    echo $context === 'Homework' ? __('Homework Chat') : __('Lesson Chat');
                     echo '</h2>';
 
                     $form = Form::create('action', $session->get('absoluteURL').'/modules/'.$session->get('module').'/planner_view_full_postProcess.php');
@@ -158,6 +165,8 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full_
                     $form->addHiddenValue('params', $paramsVar);
                     $form->addHiddenValue('gibbonPlannerEntryID', $gibbonPlannerEntryID);
                     $form->addHiddenValue('address', $session->get('address'));
+                    $form->addHiddenValue('context', $context);
+                    $form->addHiddenValue('gibbonPersonIDStudent', $gibbonPersonIDStudent);
 
                     $row = $form->addRow();
                         $column = $row->addColumn();
@@ -169,6 +178,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full_
                         $row->addSubmit();
 
                     echo $form->getOutput();
+                    }
                 }
             }
         }

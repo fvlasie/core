@@ -58,10 +58,9 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
             $URL .= '&return=error2';
             header("Location: {$URL}");
         } else {
-            //INSERT
             try {
-                $data = array('gibbonPlannerEntryDiscussID' => $gibbonPlannerEntryDiscussID);
-                $sql = 'DELETE FROM gibbonPlannerEntryDiscuss WHERE gibbonPlannerEntryDiscussID=:gibbonPlannerEntryDiscussID';
+                $data = array('gibbonPlannerEntryDiscussID' => $gibbonPlannerEntryDiscussID, 'gibbonPlannerEntryID' => $gibbonPlannerEntryID);
+                $sql = 'SELECT context, gibbonPersonIDStudent FROM gibbonPlannerEntryDiscuss WHERE gibbonPlannerEntryDiscussID=:gibbonPlannerEntryDiscussID AND gibbonPlannerEntryID=:gibbonPlannerEntryID';
                 $result = $connection2->prepare($sql);
                 $result->execute($data);
             } catch (PDOException $e) {
@@ -70,7 +69,29 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                 exit();
             }
 
-            $URL .= '&return=success0';
+            if ($result->rowCount() != 1) {
+                $URL .= '&return=error2';
+                header("Location: {$URL}");
+                exit();
+            }
+
+            $discuss = $result->fetch();
+            $anchor = ($discuss['context'] ?? '') === 'Homework'
+                ? '#homework-chat-'.$discuss['gibbonPersonIDStudent']
+                : '#lessonChat';
+
+            try {
+                $data = array('gibbonPlannerEntryDiscussID' => $gibbonPlannerEntryDiscussID, 'gibbonPlannerEntryID' => $gibbonPlannerEntryID);
+                $sql = 'DELETE FROM gibbonPlannerEntryDiscuss WHERE gibbonPlannerEntryDiscussID=:gibbonPlannerEntryDiscussID AND gibbonPlannerEntryID=:gibbonPlannerEntryID';
+                $result = $connection2->prepare($sql);
+                $result->execute($data);
+            } catch (PDOException $e) {
+                $URL .= '&return=error2';
+                header("Location: {$URL}");
+                exit();
+            }
+
+            $URL .= '&return=success0'.$anchor;
             header("Location: {$URL}");
         }
     }

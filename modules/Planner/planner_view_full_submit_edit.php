@@ -227,11 +227,8 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full_
                                 $types = array(
                                     'None' => __('None')
                                 );
-                                if ($values['homeworkSubmissionType'] == 'Link' || $values['homeworkSubmissionType'] == 'Link/File') {
-                                    $types['Link'] = __('Link');
-                                }
-                                if ($values['homeworkSubmissionType'] == 'File' || $values['homeworkSubmissionType'] == 'Link/File') {
-                                    $types['File'] = __('File');
+                                foreach (plannerHomeworkSubmissionTypes($values['homeworkSubmissionType']) as $allowedType) {
+                                    $types[$allowedType] = __($allowedType);
                                 }
                                 $row = $form->addRow();
                                     $row->addLabel('type', __('Type'));
@@ -255,6 +252,12 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full_
                                     $row = $form->addRow()->addClass('link');
                                     $row->addLabel('link', __('Submit Link'));
                                     $row->addURL('link')->required();
+
+                                $form->toggleVisibilityByClass('text')->onRadio('type')->when('Text');
+                                $row = $form->addRow()->addClass('text');
+                                    $column = $row->addColumn();
+                                    $column->addLabel('content', __('Submit Text'));
+                                    $column->addEditor('content', $guid)->setRows(12)->showMedia()->required();
 
                                 $statuses = array(
                                     'On Time' => __('On Time'),

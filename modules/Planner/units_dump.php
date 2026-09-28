@@ -428,7 +428,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/units_dump.php') =
                                         }
 
                                         //Print chats
-                                        echo "<h5 style='font-size: 85%'>".__('Chat').'</h5>';
+                                        echo "<h5 style='font-size: 85%'>".__('Lesson Chat').'</h5>';
                                         echo getThread($guid, $connection2, $rowLessons['gibbonPlannerEntryID'], null, 0, null, null, null, null, null, $class[1], $session->get('gibbonPersonID'), 'Teacher', false);
                                     }
                                 }

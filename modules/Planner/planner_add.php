@@ -309,8 +309,8 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_add.php') 
                 $row->addSelect('homeworkSubmissionDrafts')->fromArray(array('' => __('None'), '1' => __('1'), '2' => __('2'), '3' => __('3')));
 
             $row = $form->addRow()->setClass('homeworkSubmission');
-                $row->addLabel('homeworkSubmissionType', __('Submission Type'));
-                $row->addSelect('homeworkSubmissionType')->fromArray(array('Link' => __('Link'), 'File' => __('File'), 'Link/File' => __('Link/File')))->required();
+                $row->addLabel('homeworkSubmissionType', __('Submission Type'))->description(__('Students may submit any of the selected types.'));
+                $row->addCheckbox('homeworkSubmissionType')->fromArray(['Link' => __('Link'), 'File' => __('File'), 'Text' => __('Text')])->inline(true)->alignLeft();
 
             $row = $form->addRow()->setClass('homeworkSubmission');
                 $row->addLabel('homeworkSubmissionRequired', __('Submission Required'));

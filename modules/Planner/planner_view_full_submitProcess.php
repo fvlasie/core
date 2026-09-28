@@ -24,7 +24,7 @@ use Gibbon\Contracts\Filesystem\FileHandler;
 
 require_once __DIR__ . '/../../gibbon.php';
 
-$_POST = $container->get(Validator::class)->sanitize($_POST, ['link' => 'URL']);
+$_POST = $container->get(Validator::class)->sanitize($_POST, ['link' => 'URL', 'content' => 'HTML']);
 
 //Module includes
 include './moduleFunctions.php';
@@ -88,14 +88,17 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                     $gibbonPlannerEntryID = $_POST['gibbonPlannerEntryID'] ?? '';
                     $count = $_POST['count'] ?? '';
                     $lesson = $_POST['lesson'] ?? '';
+                    $content = $_POST['content'] ?? '';
+                    $editHomeworkID = $_POST['gibbonPlannerEntryHomeworkID'] ?? '';
 
-                    //Validation
-                    if ($type == '' or $version == '' or (empty($_FILES['file']['name']) and $link == '') or $status == '' or $count == '' or $lesson == '') {
+                    if ($type == '' or $version == '' or !plannerHomeworkSubmissionAllows($row['homeworkSubmissionType'], $type) or ($type == 'File' and empty($_FILES['file']['name'])) or ($type == 'Link' and $link == '') or ($type == 'Text' and trim(strip_tags($content)) === '') or $status == '' or $count == '' or $lesson == '') {
                         $URL .= '&return=error3';
                         header("Location: {$URL}");
                     } else {
                         $partialFail = false;
                         $fileMetaData = null;
+                        $attachment = '';
+                        $contentValue = null;
                         if ($type == 'Link') {
                             if (substr($link, 0, 7) != 'http://' and substr($link, 0, 8) != 'https://') {
                                 $partialFail = true;
@@ -117,16 +120,38 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                                 $fileMetaData = $fileUploader->getFileMetaData($attachment);
                             }
                         }
+                        if ($type == 'Text') {
+                            $contentValue = $content;
+                            $attachment = '';
+                        }
 
                         //Deal with partial fail
                         if ($partialFail == true) {
                             $URL .= '&return=error6';
                             header("Location: {$URL}");
                         } else {
+                            $updateDraft = false;
+                            if ($type == 'Text' && $version == 'Draft' && $editHomeworkID != '') {
+                                $dataCheck = [
+                                    'gibbonPlannerEntryHomeworkID' => $editHomeworkID,
+                                    'gibbonPersonID' => $session->get('gibbonPersonID'),
+                                    'gibbonPlannerEntryID' => $gibbonPlannerEntryID,
+                                ];
+                                $sqlCheck = "SELECT gibbonPlannerEntryHomeworkID FROM gibbonPlannerEntryHomework WHERE gibbonPlannerEntryHomeworkID=:gibbonPlannerEntryHomeworkID AND gibbonPersonID=:gibbonPersonID AND gibbonPlannerEntryID=:gibbonPlannerEntryID AND type='Text' AND version='Draft'";
+                                $resultCheck = $connection2->prepare($sqlCheck);
+                                $resultCheck->execute($dataCheck);
+                                $updateDraft = $resultCheck->rowCount() == 1;
+                            }
+
                             //Write to database
                             try {
-                                $data = array('gibbonPlannerEntryID' => $gibbonPlannerEntryID, 'gibbonPersonID' => $session->get('gibbonPersonID'), 'type' => $type, 'version' => $version, 'status' => $status, 'location' => $attachment, 'count' => ($count + 1), 'timestamp' => $timestamp);
-                                $sql = 'INSERT INTO gibbonPlannerEntryHomework SET gibbonPlannerEntryID=:gibbonPlannerEntryID, gibbonPersonID=:gibbonPersonID, type=:type, version=:version, status=:status, location=:location, count=:count, timestamp=:timestamp';
+                                if ($updateDraft) {
+                                    $data = array('content' => $contentValue, 'status' => $status, 'timestamp' => $timestamp, 'gibbonPlannerEntryHomeworkID' => $editHomeworkID);
+                                    $sql = 'UPDATE gibbonPlannerEntryHomework SET content=:content, status=:status, timestamp=:timestamp WHERE gibbonPlannerEntryHomeworkID=:gibbonPlannerEntryHomeworkID';
+                                } else {
+                                    $data = array('gibbonPlannerEntryID' => $gibbonPlannerEntryID, 'gibbonPersonID' => $session->get('gibbonPersonID'), 'type' => $type, 'version' => $version, 'status' => $status, 'location' => $attachment, 'content' => $contentValue, 'count' => ($count + 1), 'timestamp' => $timestamp);
+                                    $sql = 'INSERT INTO gibbonPlannerEntryHomework SET gibbonPlannerEntryID=:gibbonPlannerEntryID, gibbonPersonID=:gibbonPersonID, type=:type, version=:version, status=:status, location=:location, content=:content, count=:count, timestamp=:timestamp';
+                                }
                                 $result = $connection2->prepare($sql);
                                 $result->execute($data);
                             } catch (PDOException $e) {
@@ -135,7 +160,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                                 exit();
                             }
 
-                            $gibbonPlannerEntryHomeworkID = $connection2->lastInsertID();
+                            $gibbonPlannerEntryHomeworkID = $updateDraft ? $editHomeworkID : $connection2->lastInsertID();
 
                             // Record file tracking (only if file uploaded)
                             if (!empty($fileMetaData) && !empty($gibbonPlannerEntryHomeworkID)) {

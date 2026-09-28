@@ -38,8 +38,10 @@ class PlannerEntryDiscussGateway extends QueryableGateway
     private static $primaryKey = 'gibbonPlannerEntryDiscussID';
     private static $searchableColumns = [];
 
-    public function selectDiscussionByPlannerEntryID($gibbonPlannerEntryID, $parent = null)
+    public function selectDiscussionByPlannerEntryID($gibbonPlannerEntryID, $parent = null, $context = 'Lesson', $gibbonPersonIDStudent = null)
     {
+        $context = $context === 'Homework' ? 'Homework' : 'Lesson';
+
         $query = $this
             ->newSelect()
             ->cols([
@@ -53,14 +55,21 @@ class PlannerEntryDiscussGateway extends QueryableGateway
             ->from($this->getTableName())
             ->innerJoin('gibbonPerson', 'gibbonPlannerEntryDiscuss.gibbonPersonID=gibbonPerson.gibbonPersonID')
             ->innerJoin('gibbonRole', 'gibbonPerson.gibbonRoleIDPrimary=gibbonRole.gibbonRoleID')
-            ->where('gibbonPlannerEntryID=:gibbonPlannerEntryID')
+            ->where('gibbonPlannerEntryDiscuss.gibbonPlannerEntryID=:gibbonPlannerEntryID')
             ->bindValue('gibbonPlannerEntryID', $gibbonPlannerEntryID)
+            ->where('gibbonPlannerEntryDiscuss.context=:context')
+            ->bindValue('context', $context)
             ->orderBy(['gibbonPlannerEntryDiscuss.timestamp']);
 
+        if ($context === 'Homework') {
+            $query->where('gibbonPlannerEntryDiscuss.gibbonPersonIDStudent=:gibbonPersonIDStudent')
+                ->bindValue('gibbonPersonIDStudent', $gibbonPersonIDStudent);
+        }
+
         if ($parent === 0) {
-            $query->where('gibbonPlannerEntryDiscussIDReplyTo IS NULL');
+            $query->where('gibbonPlannerEntryDiscuss.gibbonPlannerEntryDiscussIDReplyTo IS NULL');
         } elseif ($parent != null) {
-            $query->where('gibbonPlannerEntryDiscussIDReplyTo=:parent', ['parent' => $parent]);
+            $query->where('gibbonPlannerEntryDiscuss.gibbonPlannerEntryDiscussIDReplyTo=:parent', ['parent' => $parent]);
         }
 
         return $this->runSelect($query);

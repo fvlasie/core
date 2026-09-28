@@ -454,5 +454,12 @@ ALTER TABLE `gibbonNotificationListener` ADD `scopeContext` VARCHAR(255) NULL AF
 ALTER TABLE `gibbonNotificationEvent` ADD `contextName` VARCHAR(255) NULL AFTER `scopes`;end
 UPDATE `gibbonNotificationEvent` SET `contextName`='Role Category', `scopes`='All,context' WHERE `event`='Flagged Field Data Updates' AND `moduleName`='Data Updater' AND `actionName`='Personal Data Updates';end
 UPDATE `gibbonNotificationEvent` SET `contextName`='Descriptor', `scopes`='All,context,gibbonPersonIDStudent,gibbonYearGroupID' WHERE `event` LIKE '% Record' AND `moduleName`='Behaviour';end
+ALTER TABLE `gibbonPlannerEntryDiscuss` ADD `context` ENUM('Lesson','Homework') NOT NULL DEFAULT 'Lesson' AFTER `gibbonPlannerEntryID`;end
+ALTER TABLE `gibbonPlannerEntryDiscuss` ADD `gibbonPersonIDStudent` INT(10) UNSIGNED ZEROFILL NULL AFTER `context`;end
+ALTER TABLE `gibbonPlannerEntryDiscuss` ADD INDEX `homeworkChat` (`gibbonPlannerEntryID`, `context`, `gibbonPersonIDStudent`);end
+ALTER TABLE `gibbonPlannerEntry` CHANGE `homeworkSubmissionType` `homeworkSubmissionType` VARCHAR(30) NOT NULL;end
+UPDATE `gibbonPlannerEntry` SET `homeworkSubmissionType`='Link,File' WHERE `homeworkSubmissionType`='Link/File';end
+ALTER TABLE `gibbonPlannerEntryHomework` CHANGE `type` `type` ENUM('Link','File','Text') NOT NULL;end
+ALTER TABLE `gibbonPlannerEntryHomework` ADD `content` TEXT NULL AFTER `location`;end
 
 ";

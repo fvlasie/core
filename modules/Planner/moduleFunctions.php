@@ -201,16 +201,236 @@ function makeBlock($guid, $connection2, $i, $mode = 'masterAdd', $title = '', $t
     }
 }
 
-function getPlannerEntryDiscussion($gibbonPlannerEntryID, array $urlParams = [], $canReply = false, $canDelete = false)
+function plannerHomeworkSubmissionTypes($stored): array
+{
+    if (is_array($stored)) {
+        $selected = $stored;
+    } else {
+        $stored = (string) $stored;
+        if ($stored === 'Link/File') {
+            return ['Link', 'File'];
+        }
+        $selected = explode(',', $stored);
+    }
+
+    $allowed = ['Link', 'File', 'Text'];
+    $selected = array_map(function ($type) {
+        return trim((string) $type);
+    }, $selected);
+
+    return array_values(array_filter($allowed, function ($type) use ($selected) {
+        return in_array($type, $selected, true);
+    }));
+}
+
+function plannerHomeworkSubmissionTypeValue($stored): string
+{
+    return implode(',', plannerHomeworkSubmissionTypes($stored));
+}
+
+function plannerHomeworkSubmissionAllows($stored, string $type): bool
+{
+    return in_array($type, plannerHomeworkSubmissionTypes($stored), true);
+}
+
+function formatPlannerHomeworkSubmissionOutput($session, array $row): string
+{
+    global $container;
+
+    if (($row['type'] ?? '') === 'Text') {
+        $html = $container->get(Validator::class)->sanitizeRichText($row['content'] ?? '');
+        if (trim(strip_tags($html)) === '') {
+            return __('No content');
+        }
+
+        return '<details><summary>'.__('View text').'</summary><div class="overflow-auto max-h-64 mt-2">'.$html.'</div></details>';
+    }
+
+    $location = $row['location'] ?? '';
+    $max = ($row['type'] ?? '') == 'File' ? 15 : 40;
+    $print = strlen($location) > $max ? substr($location, 0, $max).'...' : $location;
+
+    if (($row['type'] ?? '') == 'File') {
+        $locationSafe = str_replace(['?', '#'], ['%3F', '%23'], $location);
+
+        return "<a href='".$session->get('absoluteURL').'/'.$locationSafe."' target='_blank'>".$print.'</a>';
+    }
+
+    return "<a href='".$location."' target='_blank'>".$print.'</a>';
+}
+
+function plannerClassStudents($connection2, $gibbonCourseClassID): array
+{
+    $data = ['gibbonCourseClassID' => $gibbonCourseClassID, 'today' => date('Y-m-d')];
+    $sql = "SELECT gibbonPerson.gibbonPersonID, gibbonPerson.preferredName, gibbonPerson.surname, gibbonPerson.title
+        FROM gibbonCourseClassPerson
+        JOIN gibbonPerson ON gibbonCourseClassPerson.gibbonPersonID=gibbonPerson.gibbonPersonID
+        WHERE gibbonCourseClassPerson.gibbonCourseClassID=:gibbonCourseClassID
+        AND gibbonCourseClassPerson.role='Student'
+        AND gibbonPerson.status='Full'
+        AND (gibbonPerson.dateStart IS NULL OR gibbonPerson.dateStart<=:today)
+        AND (gibbonPerson.dateEnd IS NULL OR gibbonPerson.dateEnd>=:today)
+        ORDER BY gibbonPerson.surname, gibbonPerson.preferredName";
+    $result = $connection2->prepare($sql);
+    $result->execute($data);
+
+    return $result->fetchAll();
+}
+
+function plannerCanAccessHomeworkChat($connection2, $session, array $planner, $gibbonPersonIDStudent, $highestAction, bool $forWriting = false): bool
+{
+    if (($planner['homeworkSubmission'] ?? '') !== 'Y' || $gibbonPersonIDStudent == '') {
+        return false;
+    }
+
+    if ($forWriting && $highestAction == 'Lesson Planner_viewOnly') {
+        return false;
+    }
+
+    $student = null;
+    foreach (plannerClassStudents($connection2, $planner['gibbonCourseClassID']) as $classStudent) {
+        if ((string) $classStudent['gibbonPersonID'] === (string) $gibbonPersonIDStudent) {
+            $student = $classStudent;
+            break;
+        }
+    }
+    if ($student === null) {
+        return false;
+    }
+
+    $viewerID = (string) $session->get('gibbonPersonID');
+    if ($viewerID === (string) $gibbonPersonIDStudent) {
+        return true;
+    }
+
+    if ($highestAction == 'Lesson Planner_viewMyChildrensClasses') {
+        $dataParent = ['gibbonPersonIDStudent' => $gibbonPersonIDStudent, 'gibbonPersonIDAdult' => $viewerID];
+        $sqlParent = "SELECT gibbonFamilyChild.gibbonPersonID FROM gibbonFamilyChild JOIN gibbonFamilyAdult ON (gibbonFamilyAdult.gibbonFamilyID=gibbonFamilyChild.gibbonFamilyID) WHERE gibbonFamilyChild.gibbonPersonID=:gibbonPersonIDStudent AND gibbonFamilyAdult.gibbonPersonID=:gibbonPersonIDAdult AND gibbonFamilyAdult.childDataAccess='Y'";
+        $resultParent = $connection2->prepare($sqlParent);
+        $resultParent->execute($dataParent);
+
+        return $resultParent->rowCount() == 1;
+    }
+
+    if (in_array($highestAction, ['Lesson Planner_viewEditAllClasses', 'Lesson Planner_viewAllEditMyClasses', 'Lesson Planner_viewOnly'], true)) {
+        return true;
+    }
+
+    $dataTeacher = ['gibbonCourseClassID' => $planner['gibbonCourseClassID'], 'gibbonPersonID' => $viewerID];
+    $sqlTeacher = "SELECT gibbonCourseClassPersonID FROM gibbonCourseClassPerson WHERE gibbonCourseClassID=:gibbonCourseClassID AND gibbonPersonID=:gibbonPersonID AND role LIKE '%Teacher%' AND role NOT LIKE '%Left'";
+    $resultTeacher = $connection2->prepare($sqlTeacher);
+    $resultTeacher->execute($dataTeacher);
+
+    return $resultTeacher->rowCount() > 0;
+}
+
+function renderPlannerDiscussion($page, string $formName, string $title, string $anchor, $gibbonPlannerEntryID, array $urlParams, bool $canReply, bool $canDelete, string $context = 'Lesson', $gibbonPersonIDStudent = null): string
+{
+    if ($context === 'Homework') {
+        $urlParams['context'] = 'Homework';
+        $urlParams['gibbonPersonIDStudent'] = $gibbonPersonIDStudent;
+    } else {
+        $urlParams['context'] = 'Lesson';
+    }
+
+    $discussion = getPlannerEntryDiscussion($gibbonPlannerEntryID, $urlParams, $canReply, $canDelete, $context, $gibbonPersonIDStudent);
+
+    $form = Form::createBlank($formName, '');
+    $form->setTitle($title);
+
+    if ($canReply) {
+        $form->addHeaderAction('add', __('Add'))
+            ->setURL('/modules/Planner/planner_view_full_post.php')
+            ->addParams($urlParams)
+            ->displayLabel();
+    }
+
+    $note = $context === 'Homework'
+        ? '<p class="text-sm text-gray-600 mb-3">'.__('This chat is private to this student\'s homework. Other students cannot see it.').'</p>'
+        : '';
+
+    $form->addRow()->addContent('<a id="'.htmlspecialchars($anchor, ENT_QUOTES).'"></a>'.$note.$page->fetchFromTemplate('ui/plannerChat.twig.html', [
+        'discussion' => $discussion,
+    ]));
+
+    return $form->getOutput();
+}
+
+function renderPlannerHomeworkChats($page, $connection2, $session, array $values, $highestAction, $gibbonPersonID, array $urlParams): string
+{
+    if (($values['homeworkSubmission'] ?? '') !== 'Y') {
+        return '';
+    }
+
+    $canReply = $highestAction != 'Lesson Planner_viewOnly';
+    $canDelete = ($values['role'] ?? '') == 'Teacher';
+    $students = [];
+
+    if ($highestAction == 'Lesson Planner_viewMyChildrensClasses') {
+        foreach (plannerClassStudents($connection2, $values['gibbonCourseClassID']) as $classStudent) {
+            if ((string) $classStudent['gibbonPersonID'] === (string) $gibbonPersonID) {
+                $students[] = $classStudent;
+            }
+        }
+    } elseif (($values['role'] ?? '') == 'Student') {
+        foreach (plannerClassStudents($connection2, $values['gibbonCourseClassID']) as $classStudent) {
+            if ((string) $classStudent['gibbonPersonID'] === (string) $session->get('gibbonPersonID')) {
+                $students[] = $classStudent;
+            }
+        }
+    } else {
+        $isStaffViewer = ($values['role'] ?? '') == 'Teacher'
+            || ($values['role'] ?? '') == 'Other'
+            || strpos((string) ($values['role'] ?? ''), 'Teacher') !== false;
+        if ($isStaffViewer) {
+            $students = plannerClassStudents($connection2, $values['gibbonCourseClassID']);
+        }
+    }
+
+    $output = '';
+    $single = count($students) === 1;
+    foreach ($students as $student) {
+        if (!plannerCanAccessHomeworkChat($connection2, $session, $values, $student['gibbonPersonID'], $highestAction)) {
+            continue;
+        }
+
+        $anchor = 'homework-chat-'.$student['gibbonPersonID'];
+        $title = $single
+            ? __('Homework Chat')
+            : __('Homework Chat').': '.Format::name($student['title'] ?? '', $student['preferredName'], $student['surname'], 'Student', false);
+        $chat = renderPlannerDiscussion(
+            $page,
+            'plannerHomeworkChat'.$student['gibbonPersonID'],
+            $title,
+            $anchor,
+            $values['gibbonPlannerEntryID'],
+            $urlParams,
+            $canReply && plannerCanAccessHomeworkChat($connection2, $session, $values, $student['gibbonPersonID'], $highestAction, true),
+            $canDelete,
+            'Homework',
+            $student['gibbonPersonID']
+        );
+
+        if ($single) {
+            $output .= $chat;
+        } else {
+            $output .= '<details class="mt-4 mb-2" open><summary class="cursor-pointer font-bold">'.htmlspecialchars(Format::name('', $student['preferredName'], $student['surname'], 'Student', false)).'</summary>'.$chat.'</details>';
+        }
+    }
+
+    return $output;
+}
+
+function getPlannerEntryDiscussion($gibbonPlannerEntryID, array $urlParams = [], $canReply = false, $canDelete = false, $context = 'Lesson', $gibbonPersonIDStudent = null)
 {
     global $container, $session;
 
     $discussGateway = $container->get(PlannerEntryDiscussGateway::class);
     $validator = $container->get(Validator::class);
 
-    $build = function ($parent) use (&$build, $discussGateway, $validator, $gibbonPlannerEntryID, $urlParams, $canReply, $canDelete, $session) {
+    $build = function ($parent) use (&$build, $discussGateway, $validator, $gibbonPlannerEntryID, $urlParams, $canReply, $canDelete, $session, $context, $gibbonPersonIDStudent) {
         $discussion = [];
-        $items = $discussGateway->selectDiscussionByPlannerEntryID($gibbonPlannerEntryID, $parent)->fetchAll();
+        $items = $discussGateway->selectDiscussionByPlannerEntryID($gibbonPlannerEntryID, $parent, $context, $gibbonPersonIDStudent)->fetchAll();
 
         foreach ($items as $item) {
             $item['comment'] = $validator->sanitizeRichText($item['comment']);
@@ -218,14 +438,23 @@ function getPlannerEntryDiscussion($gibbonPlannerEntryID, array $urlParams = [],
             $item['replies'] = $build($item['gibbonPlannerEntryDiscussID']);
 
             if ($canReply) {
+                $replyParams = $urlParams + ['replyTo' => $item['gibbonPlannerEntryDiscussID'], 'context' => $context];
+                if ($context === 'Homework') {
+                    $replyParams['gibbonPersonIDStudent'] = $gibbonPersonIDStudent;
+                }
                 $item['replyURL'] = (string) Url::fromModuleRoute('Planner', 'planner_view_full_post')
-                    ->withQueryParams($urlParams + ['replyTo' => $item['gibbonPlannerEntryDiscussID']]);
+                    ->withQueryParams($replyParams);
             }
 
             if ($canDelete) {
-                $item['deleteURL'] = $session->get('absoluteURL').'/modules/Planner/planner_view_full_post_deleteProcess.php?'.http_build_query($urlParams + [
+                $deleteParams = $urlParams + [
                     'gibbonPlannerEntryDiscussID' => $item['gibbonPlannerEntryDiscussID'],
-                ]);
+                    'context' => $context,
+                ];
+                if ($context === 'Homework') {
+                    $deleteParams['gibbonPersonIDStudent'] = $gibbonPersonIDStudent;
+                }
+                $item['deleteURL'] = $session->get('absoluteURL').'/modules/Planner/planner_view_full_post_deleteProcess.php?'.http_build_query($deleteParams);
             }
 
             $discussion[] = $item;
@@ -248,10 +477,10 @@ function getThread($guid, $connection2, $gibbonPlannerEntryID, $parent, $level, 
     try {
         if ($parent == null) {
             $dataDiscuss = array('gibbonPlannerEntryID' => $gibbonPlannerEntryID);
-            $sqlDiscuss = 'SELECT gibbonPlannerEntryDiscuss.*, title, surname, preferredName, category FROM gibbonPlannerEntryDiscuss JOIN gibbonPerson ON (gibbonPlannerEntryDiscuss.gibbonPersonID=gibbonPerson.gibbonPersonID) JOIN gibbonRole ON (gibbonPerson.gibbonRoleIDPrimary=gibbonRole.gibbonRoleID) WHERE gibbonPlannerEntryID=:gibbonPlannerEntryID AND gibbonPlannerEntryDiscussIDReplyTo IS NULL ORDER BY timestamp';
+            $sqlDiscuss = "SELECT gibbonPlannerEntryDiscuss.*, title, surname, preferredName, category FROM gibbonPlannerEntryDiscuss JOIN gibbonPerson ON (gibbonPlannerEntryDiscuss.gibbonPersonID=gibbonPerson.gibbonPersonID) JOIN gibbonRole ON (gibbonPerson.gibbonRoleIDPrimary=gibbonRole.gibbonRoleID) WHERE gibbonPlannerEntryID=:gibbonPlannerEntryID AND gibbonPlannerEntryDiscussIDReplyTo IS NULL AND context='Lesson' ORDER BY timestamp";
         } else {
             $dataDiscuss = array('gibbonPlannerEntryID' => $gibbonPlannerEntryID, 'gibbonPlannerEntryDiscussIDReplyTo' => $parent, 'gibbonPlannerEntryDiscussID' => $self);
-            $sqlDiscuss = 'SELECT gibbonPlannerEntryDiscuss.*, title, surname, preferredName, category FROM gibbonPlannerEntryDiscuss JOIN gibbonPerson ON (gibbonPlannerEntryDiscuss.gibbonPersonID=gibbonPerson.gibbonPersonID) JOIN gibbonRole ON (gibbonPerson.gibbonRoleIDPrimary=gibbonRole.gibbonRoleID) WHERE gibbonPlannerEntryID=:gibbonPlannerEntryID AND gibbonPlannerEntryDiscussIDReplyTo=:gibbonPlannerEntryDiscussIDReplyTo AND gibbonPlannerEntryDiscussID=:gibbonPlannerEntryDiscussID ORDER BY timestamp';
+            $sqlDiscuss = "SELECT gibbonPlannerEntryDiscuss.*, title, surname, preferredName, category FROM gibbonPlannerEntryDiscuss JOIN gibbonPerson ON (gibbonPlannerEntryDiscuss.gibbonPersonID=gibbonPerson.gibbonPersonID) JOIN gibbonRole ON (gibbonPerson.gibbonRoleIDPrimary=gibbonRole.gibbonRoleID) WHERE gibbonPlannerEntryID=:gibbonPlannerEntryID AND gibbonPlannerEntryDiscussIDReplyTo=:gibbonPlannerEntryDiscussIDReplyTo AND gibbonPlannerEntryDiscussID=:gibbonPlannerEntryDiscussID AND context='Lesson' ORDER BY timestamp";
         }
         $resultDiscuss = $connection2->prepare($sqlDiscuss);
         $resultDiscuss->execute($dataDiscuss);
@@ -303,7 +532,7 @@ function getThread($guid, $connection2, $gibbonPlannerEntryID, $parent, $level, 
             $replies = true;
             try {
                 $dataReplies = array('gibbonPlannerEntryID' => $gibbonPlannerEntryID, 'gibbonPlannerEntryDiscussIDReplyTo' => $rowDiscuss['gibbonPlannerEntryDiscussID']);
-                $sqlReplies = 'SELECT gibbonPlannerEntryDiscuss.*, title, surname, preferredName FROM gibbonPlannerEntryDiscuss JOIN gibbonPerson ON (gibbonPlannerEntryDiscuss.gibbonPersonID=gibbonPerson.gibbonPersonID) WHERE gibbonPlannerEntryID=:gibbonPlannerEntryID AND gibbonPlannerEntryDiscussIDReplyTo=:gibbonPlannerEntryDiscussIDReplyTo ORDER BY timestamp';
+                $sqlReplies = "SELECT gibbonPlannerEntryDiscuss.*, title, surname, preferredName FROM gibbonPlannerEntryDiscuss JOIN gibbonPerson ON (gibbonPlannerEntryDiscuss.gibbonPersonID=gibbonPerson.gibbonPersonID) WHERE gibbonPlannerEntryID=:gibbonPlannerEntryID AND gibbonPlannerEntryDiscussIDReplyTo=:gibbonPlannerEntryDiscussIDReplyTo AND context='Lesson' ORDER BY timestamp";
                 $resultReplies = $connection2->prepare($sqlReplies);
                 $resultReplies->execute($dataReplies);
             } catch (PDOException $e) {

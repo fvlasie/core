@@ -28,6 +28,7 @@ use Gibbon\Domain\Planner\UnitClassBlockGateway;
 use Gibbon\Domain\Planner\UnitBlockGateway;
 
 require_once __DIR__ . '/../../gibbon.php';
+include_once __DIR__ . '/moduleFunctions.php';
 
 $_POST = $container->get(Validator::class)->sanitize($_POST, ['description' => 'HTML', 'homeworkDetails' => 'HTML', 'contents*' => 'HTML', 'teachersNotes*' => 'HTML']);
 
@@ -148,7 +149,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_edit.php')
                             }
                             
                             $homeworkSubmissionDrafts = !empty($_POST['homeworkSubmissionDrafts']) ? $_POST['homeworkSubmissionDrafts'] : null;
-                            $homeworkSubmissionType = $_POST['homeworkSubmissionType'] ?? '';
+                            $homeworkSubmissionType = plannerHomeworkSubmissionTypeValue($_POST['homeworkSubmissionType'] ?? []);
                             $homeworkSubmissionRequired = $_POST['homeworkSubmissionRequired'] ?? '';
                             if (!empty($_POST['homeworkCrowdAssess']) && $_POST['homeworkCrowdAssess'] == 'Y') {
                                 $homeworkCrowdAssess = 'Y';
@@ -214,7 +215,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_edit.php')
                         $fields = json_encode(['videoLink'=> $_POST['videoLink'] ?? ''] + $fields);
                     }
 
-                    if ($viewBy == '' or $gibbonCourseClassID == '' or $date == '' or $timeStart == '' or $timeEnd == '' or $name == '' or $homework == '' or $viewableParents == '' or $viewableStudents == '' or ($homework == 'Y' and ($homeworkDetails == '' or $homeworkDueDate == ''))) {
+                    if ($viewBy == '' or $gibbonCourseClassID == '' or $date == '' or $timeStart == '' or $timeEnd == '' or $name == '' or $homework == '' or $viewableParents == '' or $viewableStudents == '' or ($homework == 'Y' and ($homeworkDetails == '' or $homeworkDueDate == '')) or ($homeworkSubmission == 'Y' and $homeworkSubmissionType == '')) {
                         $URL .= "&return=error3$params";
                         header("Location: {$URL}");
                     } else {

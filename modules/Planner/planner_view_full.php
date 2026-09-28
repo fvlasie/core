@@ -553,6 +553,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                                         $resultVersion->execute($dataVersion);
 
                                         $latestVersion = '';
+                                        $latestHomework = [];
                                         $count = 0;
                                         $rowNum = 'odd';
                                         if ($resultVersion->rowCount() > 0) {
@@ -607,19 +608,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
 															<?php echo substr($rowVersion['timestamp'], 11, 5).' '.Format::date(substr($rowVersion['timestamp'], 0, 10)) ?><br/>
 														</td>
 														<td style='max-width: 180px; word-wrap: break-word;'>
-															<?php
-															if ($rowVersion['type'] == 'File') {
-                                                                $rowVersion['location'] = str_replace(['?','#'], ['%3F', '%23'], $rowVersion['location'] ?? '');
-																echo "<a href='".$session->get('absoluteURL').'/'.$rowVersion['location']."' target='_blank'>".$rowVersion['location'].'</a>';
-															} else {
-                                                                if (strlen($rowVersion['location'])<=40) {
-                                                                    echo "<a href='".$rowVersion['location']."' target='_blank'>".$rowVersion['location'].'</a>';
-                                                                }
-                                                                else {
-                                                                    echo "<a href='".$rowVersion['location']."' target='_blank'>".substr($rowVersion['location'], 0, 50).'...'.'</a>';
-                                                                }
-															}
-														?>
+															<?php echo formatPlannerHomeworkSubmissionOutput($session, $rowVersion); ?>
 														</td>
 														<?php
 														if (date('Y-m-d H:i:s') < $values['homeworkDueDateTime']) {
@@ -631,6 +620,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
 													</tr>
 													<?php
 													$latestVersion = $rowVersion['version'];
+                                                    $latestHomework = $rowVersion;
 												}
 											?>
 											</table>
@@ -654,19 +644,21 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                                             $form->addHiddenValue('gibbonPlannerEntryID', $gibbonPlannerEntryID);
                                             $form->addHiddenValue('currentDate', $values['date']);
 
+                                            $allowedTypes = plannerHomeworkSubmissionTypes($values['homeworkSubmissionType']);
                                             $row = $form->addRow();
                                                 $row->addLabel('type', __('Type'));
 
-                                            if ($values['homeworkSubmissionType'] == 'Link') {
-                                                $row->addTextField('type')->readonly()->required()->setValue('Link');
-                                            } elseif ($values['homeworkSubmissionType'] == 'File') {
-                                                $row->addTextField('type')->readonly()->required()->setValue('File');
-                                            } else {
-                                                $types = ['Link' => __('Link'), 'File' => __('File')];
-                                                $row->addRadio('type')->fromArray($types)->inline()->required()->checked('Link');
-
-                                                $form->toggleVisibilityByClass('submitFile')->onRadio('type')->when('File');
-                                                $form->toggleVisibilityByClass('submitLink')->onRadio('type')->when('Link');
+                                            if (count($allowedTypes) === 1) {
+                                                $row->addTextField('type')->readonly()->required()->setValue($allowedTypes[0]);
+                                            } elseif (count($allowedTypes) > 1) {
+                                                $typeOptions = [];
+                                                foreach ($allowedTypes as $allowedType) {
+                                                    $typeOptions[$allowedType] = __($allowedType);
+                                                }
+                                                $row->addRadio('type')->fromArray($typeOptions)->inline()->required()->checked($allowedTypes[0]);
+                                                foreach ($allowedTypes as $allowedType) {
+                                                    $form->toggleVisibilityByClass('submit'.$allowedType)->onRadio('type')->when($allowedType);
+                                                }
                                             }
 
                                             if ($values['homeworkSubmissionDrafts'] > 0 and $status != 'Late' and $resultVersion->rowCount() < $values['homeworkSubmissionDrafts']) {
@@ -679,17 +671,25 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                                                 $row->addLabel('version', __('Version'));
                                                 $row->addSelect('version')->fromArray($versions)->required();
 
-                                            // File
-                                            if ($values['homeworkSubmissionType'] != 'Link') {
+                                            if (in_array('Text', $allowedTypes, true)) {
+                                                if (($latestHomework['type'] ?? '') === 'Text' && ($latestHomework['version'] ?? '') === 'Draft' && !empty($latestHomework['gibbonPlannerEntryHomeworkID'])) {
+                                                    $form->addHiddenValue('gibbonPlannerEntryHomeworkID', $latestHomework['gibbonPlannerEntryHomeworkID']);
+                                                }
+                                                $row = $form->addRow()->addClass(count($allowedTypes) > 1 ? 'submitText' : '');
+                                                    $column = $row->addColumn();
+                                                    $column->addLabel('content', __('Submit Text'));
+                                                    $column->addEditor('content', $guid)->setRows(12)->showMedia()->required()->setValue((($latestHomework['type'] ?? '') === 'Text') ? ($latestHomework['content'] ?? '') : '');
+                                            }
+
+                                            if (in_array('File', $allowedTypes, true)) {
                                                 $fileUploader = $container->get(FileUploader::class);
-                                                $row = $form->addRow()->addClass('submitFile');
+                                                $row = $form->addRow()->addClass(count($allowedTypes) > 1 ? 'submitFile' : '');
                                                     $row->addLabel('file', __('Submit File'));
                                                     $row->addFileUpload('file')->accepts($fileUploader->getFileExtensions())->required();
                                             }
 
-                                            // Link
-                                            if ($values['homeworkSubmissionType'] != 'File') {
-                                                $row = $form->addRow()->addClass('submitLink');
+                                            if (in_array('Link', $allowedTypes, true)) {
+                                                $row = $form->addRow()->addClass(count($allowedTypes) > 1 ? 'submitLink' : '');
                                                     $row->addLabel('link', __('Submit Link'));
                                                     $row->addURL('link')->maxLength(255)->required();
                                             }
@@ -763,19 +763,7 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
 															<?php echo substr($rowVersion['timestamp'], 11, 5).' '.Format::date(substr($rowVersion['timestamp'], 0, 10)) ?><br/>
 														</td>
 														<td style='max-width: 180px; word-wrap: break-word;'>
-															<?php
-															if ($rowVersion['type'] == 'File') {
-                                                                $rowVersion['location'] = str_replace(['?','#'], ['%3F', '%23'], $rowVersion['location'] ?? '');
-																echo "<a href='".$session->get('absoluteURL').'/'.$rowVersion['location']."' target='_blank'>".$rowVersion['location'].'</a>';
-															} else {
-                                                                if (strlen($rowVersion['location'])<=40) {
-                                                                    echo "<a href='".$rowVersion['location']."' target='_blank'>".$rowVersion['location'].'</a>';
-                                                                }
-                                                                else {
-                                                                    echo "<a href='".$rowVersion['location']."' target='_blank'>".substr($rowVersion['location'], 0, 40).'...'.'</a>';
-                                                                }
-															}
-                                                            ?>
+															<?php echo formatPlannerHomeworkSubmissionOutput($session, $rowVersion); ?>
 														</td>
 													</tr>
 													<?php
@@ -905,19 +893,9 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
 																<?php echo substr($rowVersion['timestamp'], 11, 5).' '.Format::date(substr($rowVersion['timestamp'], 0, 10)) ?><br/>
 															</td>
 															<td>
-																<?php
-																$locationPrint = $rowVersion['location'];
-														if (strlen($locationPrint) > 15) {
-															$locationPrint = substr($locationPrint, 0, 15).'...';
-														}
-														if ($rowVersion['type'] == 'File') {
-                                                            $rowVersion['location'] = str_replace(['?','#'], ['%3F', '%23'], $rowVersion['location'] ?? '');
-															echo "<a href='".$session->get('absoluteURL').'/'.$rowVersion['location']."' target='_blank'>".$locationPrint.'</a>';
-														} else {
-															echo "<a target='_blank' href='".$rowVersion['location']."'>".$locationPrint.'</a>';
-														}
-
-                                                        echo '</td>';
+																<?php echo formatPlannerHomeworkSubmissionOutput($session, $rowVersion); ?>
+															</td>
+                                                            <?php
 
                                                                 if ($teacher) {
                                                                     echo '<td>';
@@ -935,6 +913,14 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                                     }
                                 }
                             }
+                            echo renderPlannerHomeworkChats($page, $connection2, $session, $values, $highestAction, $gibbonPersonID, [
+                                'gibbonPlannerEntryID' => $gibbonPlannerEntryID,
+                                'viewBy' => $viewBy,
+                                'subView' => $subView,
+                                'gibbonCourseClassID' => $gibbonCourseClassID,
+                                'date' => $date,
+                                'search' => $gibbonPersonID,
+                            ]);
                         } elseif ($values['homework'] == 'N') {
                             echo __('No').'<br/>';
                         }
@@ -1139,25 +1125,9 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
                             'date' => $date,
                             'search' => $gibbonPersonID,
                         ];
-                        $discussion = getPlannerEntryDiscussion($gibbonPlannerEntryID, $chatParams, $canReply, $canDelete);
 
-                        echo '<a name="chat"></a>';
-
-                        $chatForm = Form::createBlank('plannerChat', '');
-                        $chatForm->setTitle(__('Chat'));
-
-                        if ($canReply) {
-                            $chatForm->addHeaderAction('add', __('Add'))
-                                ->setURL('/modules/Planner/planner_view_full_post.php')
-                                ->addParams($chatParams)
-                                ->displayLabel();
-                        }
-
-                        $chatForm->addRow()->addContent($page->fetchFromTemplate('ui/plannerChat.twig.html', [
-                            'discussion' => $discussion,
-                        ]));
-
-                        echo $chatForm->getOutput();
+                        echo '<a id="chat"></a>';
+                        echo renderPlannerDiscussion($page, 'plannerLessonChat', __('Lesson Chat'), 'lessonChat', $gibbonPlannerEntryID, $chatParams, $canReply, $canDelete, 'Lesson');
 
                         //Participants & Attendance
                         $gibbonCourseClassID = $values['gibbonCourseClassID'];
