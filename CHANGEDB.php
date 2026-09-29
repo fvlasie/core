@@ -461,5 +461,6 @@ ALTER TABLE `gibbonPlannerEntry` CHANGE `homeworkSubmissionType` `homeworkSubmis
 UPDATE `gibbonPlannerEntry` SET `homeworkSubmissionType`='Link,File' WHERE `homeworkSubmissionType`='Link/File';end
 ALTER TABLE `gibbonPlannerEntryHomework` CHANGE `type` `type` ENUM('Link','File','Text') NOT NULL;end
 ALTER TABLE `gibbonPlannerEntryHomework` ADD `content` TEXT NULL AFTER `location`;end
+CREATE TABLE `gibbonPlannerEntryDiscussRead` (`gibbonPersonID` int(10) UNSIGNED ZEROFILL NOT NULL, `gibbonPlannerEntryID` int(14) UNSIGNED ZEROFILL NOT NULL, `gibbonPersonIDStudent` int(10) UNSIGNED ZEROFILL NOT NULL, `timestampRead` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (`gibbonPersonID`, `gibbonPlannerEntryID`, `gibbonPersonIDStudent`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;end
 
 ";

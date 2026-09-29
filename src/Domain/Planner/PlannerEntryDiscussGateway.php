@@ -74,4 +74,42 @@ class PlannerEntryDiscussGateway extends QueryableGateway
 
         return $this->runSelect($query);
     }
+
+    public function selectUnreadHomeworkChatCounts($gibbonPlannerEntryID, $gibbonPersonID)
+    {
+        $sql = "SELECT gibbonPlannerEntryDiscuss.gibbonPersonIDStudent AS gibbonPersonIDStudent, COUNT(*) AS unread
+            FROM gibbonPlannerEntryDiscuss
+            LEFT JOIN gibbonPlannerEntryDiscussRead ON (
+                gibbonPlannerEntryDiscussRead.gibbonPersonID=:gibbonPersonID
+                AND gibbonPlannerEntryDiscussRead.gibbonPlannerEntryID=gibbonPlannerEntryDiscuss.gibbonPlannerEntryID
+                AND gibbonPlannerEntryDiscussRead.gibbonPersonIDStudent=gibbonPlannerEntryDiscuss.gibbonPersonIDStudent
+            )
+            WHERE gibbonPlannerEntryDiscuss.gibbonPlannerEntryID=:gibbonPlannerEntryID
+            AND gibbonPlannerEntryDiscuss.context='Homework'
+            AND gibbonPlannerEntryDiscuss.gibbonPersonID<>:gibbonPersonIDViewer
+            AND (
+                gibbonPlannerEntryDiscussRead.timestampRead IS NULL
+                OR gibbonPlannerEntryDiscuss.timestamp > gibbonPlannerEntryDiscussRead.timestampRead
+            )
+            GROUP BY gibbonPlannerEntryDiscuss.gibbonPersonIDStudent";
+
+        return $this->db()->select($sql, [
+            'gibbonPlannerEntryID' => $gibbonPlannerEntryID,
+            'gibbonPersonID' => $gibbonPersonID,
+            'gibbonPersonIDViewer' => $gibbonPersonID,
+        ]);
+    }
+
+    public function markHomeworkChatRead($gibbonPersonID, $gibbonPlannerEntryID, $gibbonPersonIDStudent)
+    {
+        $sql = "INSERT INTO gibbonPlannerEntryDiscussRead (gibbonPersonID, gibbonPlannerEntryID, gibbonPersonIDStudent, timestampRead)
+            VALUES (:gibbonPersonID, :gibbonPlannerEntryID, :gibbonPersonIDStudent, CURRENT_TIMESTAMP)
+            ON DUPLICATE KEY UPDATE timestampRead=CURRENT_TIMESTAMP";
+
+        $this->db()->update($sql, [
+            'gibbonPersonID' => $gibbonPersonID,
+            'gibbonPlannerEntryID' => $gibbonPlannerEntryID,
+            'gibbonPersonIDStudent' => $gibbonPersonIDStudent,
+        ]);
+    }
 }

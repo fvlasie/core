@@ -26,6 +26,8 @@ use Gibbon\Forms\DatabaseFormFactory;
 use Gibbon\Domain\Timetable\CourseGateway;
 use Gibbon\Domain\Planner\PlannerEntryGateway;
 use Gibbon\Domain\Planner\PlannerEntryDiscussGateway;
+use Gibbon\Domain\Planner\PlannerEntryHomeworkGateway;
+use Gibbon\Tables\DataTable;
 use Gibbon\Forms\Input\Editor;
 use Gibbon\Http\Url;
 use Gibbon\Data\Validator;
@@ -324,7 +326,7 @@ function plannerCanAccessHomeworkChat($connection2, $session, array $planner, $g
     return $resultTeacher->rowCount() > 0;
 }
 
-function renderPlannerDiscussion($page, string $formName, string $title, string $anchor, $gibbonPlannerEntryID, array $urlParams, bool $canReply, bool $canDelete, string $context = 'Lesson', $gibbonPersonIDStudent = null): string
+function renderPlannerDiscussion($page, string $formName, string $title, string $anchor, $gibbonPlannerEntryID, array $urlParams, bool $canReply, bool $canDelete, string $context = 'Lesson', $gibbonPersonIDStudent = null, bool $showTitle = true): string
 {
     if ($context === 'Homework') {
         $urlParams['context'] = 'Homework';
@@ -336,7 +338,9 @@ function renderPlannerDiscussion($page, string $formName, string $title, string 
     $discussion = getPlannerEntryDiscussion($gibbonPlannerEntryID, $urlParams, $canReply, $canDelete, $context, $gibbonPersonIDStudent);
 
     $form = Form::createBlank($formName, '');
-    $form->setTitle($title);
+    if ($showTitle) {
+        $form->setTitle($title);
+    }
 
     if ($canReply) {
         $form->addHeaderAction('add', __('Add'))
@@ -358,7 +362,7 @@ function renderPlannerDiscussion($page, string $formName, string $title, string 
 
 function renderPlannerHomeworkChats($page, $connection2, $session, array $values, $highestAction, $gibbonPersonID, array $urlParams): string
 {
-    if (($values['homeworkSubmission'] ?? '') !== 'Y') {
+    if (($values['homeworkSubmission'] ?? '') !== 'Y' || in_array(($values['role'] ?? ''), ['Teacher', 'Other'], true)) {
         return '';
     }
 
@@ -419,6 +423,141 @@ function renderPlannerHomeworkChats($page, $connection2, $session, array $values
     }
 
     return $output;
+}
+
+function renderTeacherHomeworkSubmissionTable($connection2, $session, $container, array $values, bool $canEdit, array $urlParams, $gibbonTTDayRowClassID = ''): string
+{
+    $dataClass = [
+        'gibbonCourseClassID' => $values['gibbonCourseClassID'],
+        'today' => date('Y-m-d'),
+        'gibbonTTDayRowClassID' => $gibbonTTDayRowClassID,
+    ];
+    $sqlClass = "SELECT gibbonCourseClassPerson.*, gibbonPerson.preferredName, gibbonPerson.surname, gibbonPerson.dateStart, gibbonPerson.dateEnd
+        FROM gibbonCourseClassPerson
+        INNER JOIN gibbonPerson ON gibbonCourseClassPerson.gibbonPersonID=gibbonPerson.gibbonPersonID
+        LEFT JOIN gibbonTTDayRowClassException ON (gibbonTTDayRowClassException.gibbonPersonID=gibbonCourseClassPerson.gibbonPersonID AND gibbonTTDayRowClassException.gibbonTTDayRowClassID=:gibbonTTDayRowClassID)
+        WHERE gibbonCourseClassPerson.gibbonCourseClassID=:gibbonCourseClassID
+        AND gibbonPerson.status='Full'
+        AND (dateStart IS NULL OR dateStart<=:today)
+        AND (dateEnd IS NULL OR dateEnd>=:today)
+        AND gibbonCourseClassPerson.role='Student'
+        AND gibbonTTDayRowClassException.gibbonTTDayRowClassExceptionID IS NULL
+        ORDER BY gibbonPerson.surname, gibbonPerson.preferredName";
+    $resultClass = $connection2->prepare($sqlClass);
+    $resultClass->execute($dataClass);
+
+    $unread = [];
+    try {
+        $unreadRows = $container->get(PlannerEntryDiscussGateway::class)->selectUnreadHomeworkChatCounts($values['gibbonPlannerEntryID'], $session->get('gibbonPersonID'))->fetchAll();
+        foreach ($unreadRows as $unreadRow) {
+            $unread[(string) $unreadRow['gibbonPersonIDStudent']] = (int) $unreadRow['unread'];
+        }
+    } catch (\PDOException $e) {
+        $unread = [];
+    }
+
+    $homeworkGateway = $container->get(PlannerEntryHomeworkGateway::class);
+    $rows = [];
+    while ($student = $resultClass->fetch()) {
+        $studentID = (string) $student['gibbonPersonID'];
+        $resultVersion = $homeworkGateway->selectHomeworkByStudent($values['gibbonPlannerEntryID'], $studentID);
+        $homework = $resultVersion->rowCount() > 0 ? $resultVersion->fetch() : null;
+
+        $version = '';
+        $submitted = '';
+        $view = '';
+        $actions = '';
+        if (!empty($homework)) {
+            $version = $homework['version'];
+            if ($homework['version'] == 'Draft') {
+                $version .= ' '.$homework['count'];
+            }
+            $submitted = substr($homework['timestamp'], 11, 5).' '.Format::date(substr($homework['timestamp'], 0, 10));
+            $view = formatPlannerHomeworkSubmissionOutput($session, $homework);
+            if ($canEdit) {
+                $editUrl = $session->get('absoluteURL').'/index.php?q=/modules/Planner/planner_view_full_submit_edit.php&gibbonPlannerEntryID='.urlencode($urlParams['gibbonPlannerEntryID']).'&viewBy='.urlencode($urlParams['viewBy'] ?? '').'&subView='.urlencode($urlParams['subView'] ?? '').'&gibbonCourseClassID='.urlencode($urlParams['gibbonCourseClassID'] ?? '').'&date='.urlencode($urlParams['date'] ?? '').'&search='.urlencode($urlParams['search'] ?? '').'&gibbonPlannerEntryHomeworkID='.$homework['gibbonPlannerEntryHomeworkID'].'&submission=true';
+                $deleteUrl = $session->get('absoluteURL').'/modules/Planner/planner_view_full_submit_deleteProcess.php?gibbonPlannerEntryID='.urlencode($urlParams['gibbonPlannerEntryID']).'&viewBy='.urlencode($urlParams['viewBy'] ?? '').'&subView='.urlencode($urlParams['subView'] ?? '').'&gibbonCourseClassID='.urlencode($urlParams['gibbonCourseClassID'] ?? '').'&date='.urlencode($urlParams['date'] ?? '').'&search='.urlencode($urlParams['search'] ?? '').'&gibbonPlannerEntryHomeworkID='.$homework['gibbonPlannerEntryHomeworkID'];
+                $actions = "<a href='".htmlspecialchars($editUrl, ENT_QUOTES)."'><img title='".htmlspecialchars(__('Edit'), ENT_QUOTES)."' src='./themes/".htmlspecialchars($session->get('gibbonThemeName'), ENT_QUOTES)."/img/config.png'/></a> ";
+                $actions .= "<a onclick='return confirm(".json_encode(__('Are you sure you wish to delete this record?')).")' href='".htmlspecialchars($deleteUrl, ENT_QUOTES)."'><img title='".htmlspecialchars(__('Delete'), ENT_QUOTES)."' src='./themes/".htmlspecialchars($session->get('gibbonThemeName'), ENT_QUOTES)."/img/garbage.png'/></a>";
+            }
+        } elseif ($canEdit) {
+            $editUrl = $session->get('absoluteURL').'/index.php?q=/modules/Planner/planner_view_full_submit_edit.php&gibbonPlannerEntryID='.urlencode($urlParams['gibbonPlannerEntryID']).'&viewBy='.urlencode($urlParams['viewBy'] ?? '').'&subView='.urlencode($urlParams['subView'] ?? '').'&gibbonCourseClassID='.urlencode($urlParams['gibbonCourseClassID'] ?? '').'&date='.urlencode($urlParams['date'] ?? '').'&search='.urlencode($urlParams['search'] ?? '').'&gibbonPersonID='.$studentID.'&submission=false';
+            $actions = "<a href='".htmlspecialchars($editUrl, ENT_QUOTES)."'><img title='".htmlspecialchars(__('Edit'), ENT_QUOTES)."' src='./themes/".htmlspecialchars($session->get('gibbonThemeName'), ENT_QUOTES)."/img/config.png'/></a>";
+        }
+
+        $chatUrl = $session->get('absoluteURL').'/modules/Planner/planner_view_full_homeworkChat.php?'.http_build_query([
+            'gibbonPlannerEntryID' => $values['gibbonPlannerEntryID'],
+            'gibbonPersonIDStudent' => $studentID,
+            'viewBy' => $urlParams['viewBy'] ?? '',
+            'subView' => $urlParams['subView'] ?? '',
+            'gibbonCourseClassID' => $urlParams['gibbonCourseClassID'] ?? '',
+            'date' => $urlParams['date'] ?? '',
+            'search' => $urlParams['search'] ?? '',
+        ]);
+        $slotId = 'homework-chat-'.$studentID;
+        $unreadCount = $unread[$studentID] ?? 0;
+        $clearOthers = "document.querySelectorAll('.homework-chat-slot').forEach(function (slot) { if (slot.id !== ".json_encode($slotId).") slot.replaceChildren(); });";
+        $badge = '<span id="homework-chat-badge-'.htmlspecialchars($studentID, ENT_QUOTES).'" class="ml-1 tag error"'.($unreadCount > 0 ? '' : ' style="display:none"').'>'.($unreadCount > 0 ? (int) $unreadCount : '').'</span>';
+        $chat = '<button type="button" class="tag message" data-homework-chat="'.htmlspecialchars($studentID, ENT_QUOTES).'" @click="open = '.htmlspecialchars(json_encode($studentID), ENT_QUOTES).'" hx-get="'.htmlspecialchars($chatUrl, ENT_QUOTES).'" hx-target="#'.htmlspecialchars($slotId, ENT_QUOTES).'" hx-swap="innerHTML" hx-on::before-request="'.htmlspecialchars($clearOthers, ENT_QUOTES).'" hx-on::after-swap="var row = this.closest(\'tr\'); if (row && row.nextElementSibling) row.nextElementSibling.scrollIntoView({block:\'nearest\'})">'.__('Chat').$badge.'</button>';
+
+        $rows[] = [
+            'gibbonPersonID' => $studentID,
+            'student' => "<a href='index.php?q=/modules/Students/student_view_details.php&gibbonPersonID=".$studentID."'>".htmlspecialchars(Format::name('', $student['preferredName'], $student['surname'], 'Student', true), ENT_QUOTES).'</a>',
+            'status' => plannerHomeworkSubmissionStatus($values, $student, $homework),
+            'version' => $version,
+            'submitted' => $submitted,
+            'view' => $view,
+            'chat' => $chat,
+            'actions' => $actions,
+        ];
+    }
+
+    $table = DataTable::create('homeworkSubmissions');
+    $table->addMetaData('allowHTML', ['student', 'status', 'view', 'chat', 'actions']);
+    $table->addColumn('student', __('Student'));
+    $table->addColumn('status', __('Status'));
+    $table->addColumn('version', __('Version'));
+    $table->addColumn('submitted', __('Date/Time'));
+    $table->addColumn('view', __('View'));
+    $table->addColumn('chat', __('Chat'));
+    if ($canEdit) {
+        $table->addColumn('actions', __('Action'));
+    }
+
+    $table->modifyRows(function ($data, $row, $columnCount) {
+        $studentID = (string) $data['gibbonPersonID'];
+        $slotId = 'homework-chat-'.$studentID;
+        $row->setAppended('<tr x-cloak x-show="open === '.htmlspecialchars(json_encode($studentID), ENT_QUOTES).'"><td colspan="'.(int) $columnCount.'" class="p-3 bg-gray-50"><div id="'.htmlspecialchars($slotId, ENT_QUOTES).'" class="homework-chat-slot"></div></td></tr>');
+
+        return $row;
+    });
+
+    $hashOpen = "var hash = window.location.hash || ''; if (hash.indexOf('#homework-chat-') === 0) { var id = hash.slice('#homework-chat-'.length); var btn = document.querySelector('[data-homework-chat=\"' + id + '\"]'); if (btn) btn.click(); }";
+
+    return '<div x-data="{ open: \'\' }" x-init="'.htmlspecialchars($hashOpen, ENT_QUOTES).'">'.$table->render($rows).'</div>';
+}
+
+function plannerHomeworkSubmissionStatus(array $lesson, array $student, $homework): string
+{
+    if (empty($homework)) {
+        if (date('Y-m-d H:i:s') < ($lesson['homeworkDueDateTime'] ?? '')) {
+            return __('Pending');
+        }
+        if (!empty($student['dateStart']) && $student['dateStart'] > ($lesson['date'] ?? '')) {
+            return Format::tooltip(__('NA'), __('Student joined school after lesson was taught.'));
+        }
+        if (($lesson['homeworkSubmissionRequired'] ?? '') == 'Required') {
+            return Format::tag(__('Incomplete'), 'error');
+        }
+
+        return __('Not submitted online');
+    }
+
+    if ($homework['status'] == 'On Time' || $homework['status'] == 'Exemption') {
+        return __($homework['status']);
+    }
+
+    return Format::tag(__($homework['status']), 'error');
 }
 
 function getPlannerEntryDiscussion($gibbonPlannerEntryID, array $urlParams = [], $canReply = false, $canDelete = false, $context = 'Lesson', $gibbonPersonIDStudent = null)

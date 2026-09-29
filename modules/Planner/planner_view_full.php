@@ -774,142 +774,19 @@ if (isActionAccessible($guid, $connection2, '/modules/Planner/planner_view_full.
 											<?php
                                         }
                                     }
-                                } elseif ($values['role'] == 'Teacher') {
+                                } elseif ($values['role'] == 'Teacher' || $values['role'] == 'Other') {
                                     echo "<span style='font-size: 115%; font-weight: bold'>".__('Online Submission').'</span><br/>';
                                     echo '<i>'.__('Online submission is {required} for this {homeworkName}.', ['homeworkName' => mb_strtolower(__($homeworkNameSingular)), 'required' => '<b>'.strtolower($values['homeworkSubmissionRequired']).'</b>']).'</i><br/>';
 
-                                    if ($teacher || $teacherViewOnlyAccess) {
-
-                                        //List submissions
-                                        $dataClass = array('gibbonCourseClassID' => $values['gibbonCourseClassID'], 'today' => date('Y-m-d'), 'gibbonTTDayRowClassID' => ($ttPeriod['gibbonTTDayRowClassID'] ?? ''));
-                                        $sqlClass = "SELECT gibbonCourseClassPerson.*, gibbonPerson.preferredName, gibbonPerson.surname, gibbonPerson.dateStart, gibbonPerson.dateEnd FROM gibbonCourseClassPerson 
-                                        INNER JOIN gibbonPerson ON gibbonCourseClassPerson.gibbonPersonID=gibbonPerson.gibbonPersonID 
-                                        LEFT JOIN gibbonTTDayRowClassException ON (gibbonTTDayRowClassException.gibbonPersonID=gibbonCourseClassPerson.gibbonPersonID AND gibbonTTDayRowClassException.gibbonTTDayRowClassID=:gibbonTTDayRowClassID)
-                                        WHERE gibbonCourseClassPerson.gibbonCourseClassID=:gibbonCourseClassID 
-                                        AND gibbonPerson.status='Full' 
-                                        AND (dateStart IS NULL OR dateStart<=:today) 
-                                        AND (dateEnd IS NULL  OR dateEnd>=:today) 
-                                        AND gibbonCourseClassPerson.role='Student' 
-                                        AND gibbonTTDayRowClassException.gibbonTTDayRowClassExceptionID IS NULL
-                                        ORDER BY gibbonCourseClassPerson.role DESC, gibbonPerson.surname, gibbonPerson.preferredName";
-                                        $resultClass = $connection2->prepare($sqlClass);
-                                        $resultClass->execute($dataClass);
-                                        $count = 0;
-                                        $rowNum = 'odd';
-                                        if ($resultClass->rowCount() > 0) {
-                                            ?>
-											<table cellspacing='0' style="width: 100%">
-												<tr class='head'>
-													<th>
-														<?php echo __('Student') ?><br/>
-													</th>
-													<th>
-														<?php echo __('Status') ?><br/>
-													</th>
-													<th>
-														<?php echo __('Version') ?><br/>
-													</th>
-													<th>
-														<?php echo __('Date/Time') ?><br/>
-													</th>
-													<th>
-														<?php echo __('View') ?><br/>
-													</th>
-                                                    <?php if ($teacher) { ?>
-													<th>
-														<?php echo __('Action') ?><br/>
-													</th>
-                                                    <?php } ?>
-												</tr>
-												<?php
-												while ($rowClass = $resultClass->fetch()) {
-													if ($count % 2 == 0) {
-														$rowNum = 'even';
-													} else {
-														$rowNum = 'odd';
-													}
-													++$count;
-
-													echo "<tr class=$rowNum>";
-													?>
-
-														<td>
-															<?php echo "<a href='index.php?q=/modules/Students/student_view_details.php&gibbonPersonID=".$rowClass['gibbonPersonID']."'>".Format::name('', $rowClass['preferredName'], $rowClass['surname'], 'Student', true).'</a>' ?><br/>
-														</td>
-
-														<?php
-                                                        
-                                                        $resultVersion = $container->get(PlannerEntryHomeworkGateway::class)->selectHomeworkByStudent($values['gibbonPlannerEntryID'], $rowClass['gibbonPersonID']);
-
-													    if ($resultVersion->rowCount() < 1) {
-														?>
-															<td colspan=4>
-																<?php
-																//Before deadline
-																if (date('Y-m-d H:i:s') < $values['homeworkDueDateTime']) {
-																	echo 'Pending';
-																}
-																//After
-																else {
-																	if ($rowClass['dateStart'] > $values['date']) {
-																		echo "<span title='".__('Student joined school after lesson was taught.')."' style='color: #000; font-weight: normal; border: 2px none #ff0000; padding: 2px 4px'>".__('NA').'</span>';
-																	} else {
-																		if ($values['homeworkSubmissionRequired'] == 'Required') {
-																			echo "<span style='color: #ff0000; font-weight: bold; border: 2px solid #ff0000; padding: 2px 4px'>".__('Incomplete').'</span>';
-																		} else {
-																			echo __('Not submitted online');
-																		}
-																	}
-																}
-                                                            echo '</td>';
-
-                                                            if ($teacher) {
-                                                                echo '<td>';
-																echo "<a href='".$session->get('absoluteURL')."/index.php?q=/modules/Planner/planner_view_full_submit_edit.php&gibbonPlannerEntryID=$gibbonPlannerEntryID&viewBy=$viewBy&subView=$subView&gibbonCourseClassID=$gibbonCourseClassID&date=$date&search=".$gibbonPersonID.'&gibbonPersonID='.$rowClass['gibbonPersonID']."&submission=false'><img title='".__('Edit')."' src='./themes/".$session->get('gibbonThemeName')."/img/config.png'/></a> ";
-                                                                echo '</td>';
-                                                            }
-
-													} else {
-														$rowVersion = $resultVersion->fetch();
-														?>
-															<td>
-																<?php
-																if ($rowVersion['status'] == 'On Time' or $rowVersion['status'] == 'Exemption') {
-																	echo $rowVersion['status'];
-																} else {
-																	echo "<span style='color: #ff0000; font-weight: bold; border: 2px solid #ff0000; padding: 2px 4px'>".$rowVersion['status'].'</span>';
-																}
-														?>
-															</td>
-															<td>
-																<?php
-																echo $rowVersion['version'];
-														if ($rowVersion['version'] == 'Draft') {
-															echo ' '.$rowVersion['count'];
-														}
-														?>
-															</td>
-															<td>
-																<?php echo substr($rowVersion['timestamp'], 11, 5).' '.Format::date(substr($rowVersion['timestamp'], 0, 10)) ?><br/>
-															</td>
-															<td>
-																<?php echo formatPlannerHomeworkSubmissionOutput($session, $rowVersion); ?>
-															</td>
-                                                            <?php
-
-                                                                if ($teacher) {
-                                                                    echo '<td>';
-																echo "<a href='".$session->get('absoluteURL')."/index.php?q=/modules/Planner/planner_view_full_submit_edit.php&gibbonPlannerEntryID=$gibbonPlannerEntryID&viewBy=$viewBy&subView=$subView&gibbonCourseClassID=$gibbonCourseClassID&date=$date&width=1000&height=550&search=".$gibbonPersonID.'&gibbonPlannerEntryHomeworkID='.$rowVersion['gibbonPlannerEntryHomeworkID']."&submission=true'><img title='".__('Edit')."' src='./themes/".$session->get('gibbonThemeName')."/img/config.png'/></a> ";
-														echo "<a onclick='return confirm(\"".__('Are you sure you wish to delete this record?')."\")' href='".$session->get('absoluteURL')."/modules/Planner/planner_view_full_submit_deleteProcess.php?gibbonPlannerEntryID=$gibbonPlannerEntryID&viewBy=$viewBy&subView=$subView&gibbonCourseClassID=$gibbonCourseClassID&date=$date&width=1000&height=550&search=$gibbonPersonID&gibbonPlannerEntryHomeworkID=".$rowVersion['gibbonPlannerEntryHomeworkID']."'><img title='".__('Delete')."' src='./themes/".$session->get('gibbonThemeName')."/img/garbage.png'/></a>";
-														echo '</td>';
-                                                    }
-															
-													}
-													echo '</tr>';
-
-												}
-                                            	echo '</table>';
-                                        }
+                                    if ($teacher || $teacherViewOnlyAccess || $values['role'] == 'Other') {
+                                        echo renderTeacherHomeworkSubmissionTable($connection2, $session, $container, $values, (bool) $teacher, [
+                                            'gibbonPlannerEntryID' => $gibbonPlannerEntryID,
+                                            'viewBy' => $viewBy,
+                                            'subView' => $subView,
+                                            'gibbonCourseClassID' => $gibbonCourseClassID,
+                                            'date' => $date,
+                                            'search' => $gibbonPersonID,
+                                        ], $ttPeriod['gibbonTTDayRowClassID'] ?? '');
                                     }
                                 }
                             }

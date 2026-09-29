@@ -65,6 +65,7 @@ v31.0.00
         Messenger: creator of targeted message can now view it in Message Wall
         Planner: teachers can accept Link, File, and Text homework submissions at the same time
         Planner: renamed lesson Chat to Lesson Chat and added a private Homework Chat for each student's submission
+        Planner: teachers open one Homework Chat under that student's row, with a badge for unread comments
         Planner: improved the Deploy Unit page with a drag-drop interface and new tools
         Planner: added the option to set a location for non-timetables lessons in Lesson Planner
         Planner: restored lesson plan Chat comments using the discussion UI, keeping existing records

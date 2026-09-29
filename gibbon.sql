@@ -4604,6 +4604,19 @@ CREATE TABLE `gibbonPlannerEntryDiscuss` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `gibbonPlannerEntryDiscussRead`
+--
+
+CREATE TABLE `gibbonPlannerEntryDiscussRead` (
+  `gibbonPersonID` int(10) UNSIGNED ZEROFILL NOT NULL,
+  `gibbonPlannerEntryID` int(14) UNSIGNED ZEROFILL NOT NULL,
+  `gibbonPersonIDStudent` int(10) UNSIGNED ZEROFILL NOT NULL,
+  `timestampRead` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `gibbonPlannerEntryGuest`
 --
 
@@ -7592,6 +7605,12 @@ ALTER TABLE `gibbonPlannerEntry`
 ALTER TABLE `gibbonPlannerEntryDiscuss`
   ADD PRIMARY KEY (`gibbonPlannerEntryDiscussID`),
   ADD KEY `homeworkChat` (`gibbonPlannerEntryID`, `context`, `gibbonPersonIDStudent`);
+
+--
+-- Indexes for table `gibbonPlannerEntryDiscussRead`
+--
+ALTER TABLE `gibbonPlannerEntryDiscussRead`
+  ADD PRIMARY KEY (`gibbonPersonID`, `gibbonPlannerEntryID`, `gibbonPersonIDStudent`);
 
 --
 -- Indexes for table `gibbonPlannerEntryGuest`
